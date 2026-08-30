@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Smart Traffic</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+</head>
+
+
+<body>
+
+
+<div class="container home-container">
+
+    <h1>🚦 Smart Traffic</h1>
+
+
+    <h2>
+        Smart Traffic Detection &
+        Alternate Route Suggestion System
+    </h2>
+
+
+    <p>
+        Monitor traffic conditions,
+        detect vehicles and find
+        alternate routes.
+    </p>
+
+
+    <div class="buttons">
+
+        <a href="{{ url_for('login') }}">
+            🔐 Login
+        </a>
+
+
+        <a href="{{ url_for('register') }}">
+            📝 Register
+        </a>
+
+    </div>
+
+</div>
+
+
+</body>
+
+</html>

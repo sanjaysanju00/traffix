@@ -1,0 +1,6 @@
+firebase-service-account.json
+traffic.db
+runs/
+__pycache__/
+venv/
+.env

@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Smart Traffic Notifications</title>
+
+    <style>
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            margin: 0;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: auto;
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        p {
+            color: #555;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #enableBtn {
+            background: #1976d2;
+            color: white;
+        }
+
+        #testBtn {
+            background: #2e7d32;
+            color: white;
+        }
+
+        button:disabled {
+            background: #aaa;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background: #f1f1f1;
+            word-break: break-word;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+<div class="container">
+
+    <h1>🚦 Smart Traffic</h1>
+
+    <p>
+        Enable mobile notifications to receive
+        traffic alerts.
+    </p>
+
+
+    <button
+        id="enableBtn"
+        onclick="enableNotifications()"
+    >
+        🔔 Enable Notifications
+    </button>
+
+
+    <button
+        id="testBtn"
+        onclick="sendTestNotification()"
+        disabled
+    >
+        📱 Send Test Notification
+    </button>
+
+
+    <div id="status">
+        Notifications not enabled.
+    </div>
+
+</div>
+
+
+<script type="module">
+
+    // ==========================================
+    // FIREBASE SDK
+    // ==========================================
+
+    import {
+        initializeApp
+    } from
+    "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+
+
+    import {
+        getMessaging,
+        getToken,
+        onMessage
+    } from
+    "https://www.gstatic.com/firebasejs/12.1.0/firebase-messaging.js";
+
+
+    // ==========================================
+    // NEW FIREBASE CONFIGURATION
+    // ==========================================
+
+    const firebaseConfig = {
+
+        apiKey:
+            "AIzaSyCEDu7nwRBQ0G_mdX09JoJj4AW4d5pAr5U",
+
+        authDomain:
+            "projectsanjaysie.firebaseapp.com",
+
+        projectId:
+            "projectsanjaysie",
+
+        storageBucket:
+            "projectsanjaysie.firebasestorage.app",
+
+        messagingSenderId:
+            "8747423858",
+
+        appId:
+            "1:8747423858:web:49846d0d440b069a014aeb"
+
+    };
+
+
+    // ==========================================
+    // INITIALIZE FIREBASE
+    // ==========================================
+
+    const app =
+        initializeApp(firebaseConfig);
+
+
+    const messaging =
+        getMessaging(app);
+
+
+    // ==========================================
+    // NEW VAPID PUBLIC KEY
+    // ==========================================
+
+    const VAPID_KEY =
+        "BEmOwxz_GZMQPsFJqFDxq2AgI7d6PF6f7YY3qOd-9hVQkKWG6NcDWLE6xZV47H32G1O51f00uqPZz3yBX-2NJ0I";
+
+
+    // ==========================================
+    // STATUS
+    // ==========================================
+
+    function showStatus(message) {
+
+        document.getElementById("status").innerText =
+            message;
+
+    }
+
+
+    // ==========================================
+    // ENABLE NOTIFICATIONS
+    // ==========================================
+
+    window.enableNotifications =
+        async function() {
+
+        try {
+
+            showStatus(
+                "Requesting notification permission..."
+            );
+
+
+            // ----------------------------------
+            // REQUEST PERMISSION
+            // ----------------------------------
+
+            const permission =
+                await Notification.requestPermission();
+
+
+            if (permission !== "granted") {
+
+                showStatus(
+                    "❌ Notification permission was denied."
+                );
+
+                return;
+
+            }
+
+
+            showStatus(
+                "Permission granted. Registering Firebase service worker..."
+            );
+
+
+            // ----------------------------------
+            // REGISTER SERVICE WORKER
+            // ----------------------------------
+
+            const registration =
+                await navigator.serviceWorker.register(
+                    "/firebase-messaging-sw.js"
+                );
+
+
+            console.log(
+                "Firebase service worker:",
+                registration
+            );
+
+
+            showStatus(
+                "Service worker registered. Creating Firebase token..."
+            );
+
+
+            // ----------------------------------
+            // CREATE FCM TOKEN
+            // ----------------------------------
+
+            const token =
+                await getToken(
+
+                    messaging,
+
+                    {
+                        vapidKey: VAPID_KEY,
+
+                        serviceWorkerRegistration:
+                            registration
+                    }
+
+                );
+
+
+            if (!token) {
+
+                showStatus(
+                    "❌ Firebase token could not be created."
+                );
+
+                return;
+
+            }
+
+
+            console.log(
+                "FCM TOKEN:",
+                token
+            );
+
+
+            // ----------------------------------
+            // SEND TOKEN TO FLASK
+            // ----------------------------------
+
+            const response =
+                await fetch(
+                    "/firebase-token",
+                    {
+
+                        method: "POST",
+
+                        headers: {
+
+                            "Content-Type":
+                                "application/json"
+
+                        },
+
+                        body:
+                            JSON.stringify({
+
+                                token: token
+
+                            })
+
+                    }
+                );
+
+
+            const result =
+                await response.json();
+
+
+            console.log(
+                "Flask response:",
+                result
+            );
+
+
+            if (result.success) {
+
+                showStatus(
+                    "✅ Mobile notifications enabled successfully!"
+                );
+
+
+                document.getElementById(
+                    "enableBtn"
+                ).disabled = true;
+
+
+                document.getElementById(
+                    "testBtn"
+                ).disabled = false;
+
+            }
+
+            else {
+
+                showStatus(
+
+                    "❌ Server error: " +
+                    (result.message || "Unknown error.")
+
+                );
+
+            }
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Notification setup error:",
+                error
+            );
+
+
+            showStatus(
+
+                "❌ Notification setup failed: " +
+                error.message
+
+            );
+
+        }
+
+    };
+
+
+    // ==========================================
+    // FOREGROUND MESSAGE
+    // ==========================================
+
+    onMessage(
+
+        messaging,
+
+        function(payload) {
+
+            console.log(
+                "Foreground Firebase message:",
+                payload
+            );
+
+
+            const title =
+                payload.notification?.title
+                ||
+                "🚦 Smart Traffic Alert";
+
+
+            const body =
+                payload.notification?.body
+                ||
+                "Traffic alert received.";
+
+
+            if (
+                Notification.permission ===
+                "granted"
+            ) {
+
+                new Notification(
+
+                    title,
+
+                    {
+                        body: body
+                    }
+
+                );
+
+            }
+
+        }
+
+    );
+
+
+    // ==========================================
+    // TEST NOTIFICATION
+    // ==========================================
+
+    window.sendTestNotification =
+        async function() {
+
+        try {
+
+            showStatus(
+                "Sending test notification..."
+            );
+
+
+            const response =
+                await fetch(
+
+                    "/test-firebase-notification",
+
+                    {
+
+                        method: "POST",
+
+                        headers: {
+
+                            "Content-Type":
+                                "application/json"
+
+                        },
+
+                        body:
+                            JSON.stringify({
+
+                                message:
+                                    "Test notification from Smart Traffic Fresh."
+
+                            })
+
+                    }
+
+                );
+
+
+            const result =
+                await response.json();
+
+
+            console.log(
+                "Test result:",
+                result
+            );
+
+
+            if (result.success) {
+
+                showStatus(
+                    "✅ Test notification sent!"
+                );
+
+            }
+
+            else {
+
+                showStatus(
+
+                    "❌ " +
+                    (result.message || "Notification failed.")
+
+                );
+
+            }
+
+        }
+
+        catch (error) {
+
+            console.error(
+                error
+            );
+
+
+            showStatus(
+
+                "❌ Unable to send notification: " +
+                error.message
+
+            );
+
+        }
+
+    };
+
+</script>
+
+
+</body>
+
+</html>

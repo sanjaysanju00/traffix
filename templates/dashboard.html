@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Smart Traffic Dashboard</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+</head>
+
+
+<body>
+
+
+<div class="container">
+
+
+    <h1>
+        🚦 Smart Traffic Dashboard
+    </h1>
+
+
+    <p>
+        Welcome,
+        <strong>{{ name }}</strong>
+    </p>
+
+
+    <!-- =========================================
+         VEHICLE COUNT
+    ========================================== -->
+
+    <div class="card">
+
+        <h2>
+            🚗 Vehicles Detected
+        </h2>
+
+
+        <div
+            id="vehicles"
+            class="value"
+        >
+            0
+        </div>
+
+    </div>
+
+
+    <!-- =========================================
+         TRAFFIC STATUS
+    ========================================== -->
+
+    <div
+        class="card normal"
+        id="trafficCard"
+    >
+
+        <h2>
+            🚦 Traffic Status
+        </h2>
+
+
+        <div
+            id="status"
+            class="value"
+        >
+            NORMAL
+        </div>
+
+
+        <p id="trafficAlert">
+
+            🟢 Traffic is normal.
+
+        </p>
+
+    </div>
+
+
+    <!-- =========================================
+         SYSTEM STATUS
+    ========================================== -->
+
+    <div class="card">
+
+        <h2>
+            🟢 System Status
+        </h2>
+
+
+        <div class="value">
+
+            ONLINE
+
+        </div>
+
+    </div>
+
+
+    <!-- =========================================
+         CURRENT LOCATION
+    ========================================== -->
+
+    <div class="card">
+
+        <h2>
+            📍 Current Location
+        </h2>
+
+
+        <button
+            type="button"
+            onclick="getLocation()"
+        >
+
+            📍 Detect My Location
+
+        </button>
+
+
+        <p id="locationStatus">
+
+            Location not detected.
+
+        </p>
+
+
+        <p id="coordinates"></p>
+
+
+        <a
+            id="currentLocationMap"
+            href="#"
+            target="_blank"
+            class="map-button"
+            style="display:none;"
+        >
+
+            🗺️ View My Location
+
+        </a>
+
+    </div>
+
+
+    <!-- =========================================
+         ALTERNATE ROUTE
+    ========================================== -->
+
+    <div
+        class="card"
+        id="routeCard"
+    >
+
+        <h2>
+            🗺️ Alternate Route Suggestion
+        </h2>
+
+
+        <!-- Dynamic traffic message -->
+
+        <p id="routeRecommendation">
+
+            🟢 Traffic is normal.
+            No alternate route is required.
+
+        </p>
+
+
+        <p>
+
+            Enter your destination below.
+            Google Maps will show available routes.
+
+        </p>
+
+
+        <input
+            type="text"
+            id="destination"
+            placeholder="Enter your destination"
+        >
+
+
+        <br><br>
+
+
+        <button
+            type="button"
+            onclick="openGoogleMaps()"
+        >
+
+            🚗 Find Alternate Route
+
+        </button>
+
+
+        <p id="routeStatus"></p>
+
+    </div>
+
+
+    <!-- =========================================
+         NAVIGATION BUTTONS
+    ========================================== -->
+
+    <div class="buttons">
+
+
+        <a href="{{ url_for('notifications') }}">
+
+            📱 Notifications
+
+        </a>
+
+
+        <a href="{{ url_for('logout') }}">
+
+            Logout
+
+        </a>
+
+
+    </div>
+
+
+</div>
+
+
+<script>
+
+
+// =================================================
+// GLOBAL LOCATION VARIABLES
+// =================================================
+
+let currentLatitude = null;
+
+let currentLongitude = null;
+
+
+// =================================================
+// LIVE TRAFFIC UPDATE
+// =================================================
+
+async function updateDashboard() {
+
+    try {
+
+        const response =
+            await fetch("/traffic");
+
+
+        const data =
+            await response.json();
+
+
+        // =========================================
+        // VEHICLE COUNT
+        // =========================================
+
+        document.getElementById(
+            "vehicles"
+        ).innerText =
+            data.vehicle_count;
+
+
+        // =========================================
+        // TRAFFIC STATUS
+        // =========================================
+
+        const statusElement =
+            document.getElementById(
+                "status"
+            );
+
+
+        const alertElement =
+            document.getElementById(
+                "trafficAlert"
+            );
+
+
+        const trafficCard =
+            document.getElementById(
+                "trafficCard"
+            );
+
+
+        const routeRecommendation =
+            document.getElementById(
+                "routeRecommendation"
+            );
+
+
+        const status =
+            String(
+                data.traffic_status
+            )
+            .trim()
+            .toUpperCase();
+
+
+        statusElement.innerText =
+            status;
+
+
+        // =========================================
+        // NORMAL
+        // =========================================
+
+        if (status === "NORMAL") {
+
+            trafficCard.className =
+                "card normal";
+
+
+            alertElement.innerText =
+                "🟢 Traffic is normal.";
+
+
+            routeRecommendation.innerText =
+                "🟢 Traffic is normal. "
+                + "No alternate route is required.";
+
+        }
+
+
+        // =========================================
+        // MODERATE
+        // =========================================
+
+        else if (
+            status === "MODERATE"
+        ) {
+
+            trafficCard.className =
+                "card moderate";
+
+
+            alertElement.innerText =
+                "⚠️ Moderate traffic detected.";
+
+
+            routeRecommendation.innerText =
+                "⚠️ Moderate traffic detected. "
+                + "Consider checking an alternate route.";
+
+        }
+
+
+        // =========================================
+        // HEAVY
+        // =========================================
+
+        else if (
+            status === "HEAVY"
+        ) {
+
+            trafficCard.className =
+                "card heavy";
+
+
+            alertElement.innerText =
+                "🚨 Heavy traffic detected! "
+                + "Consider an alternate route.";
+
+
+            routeRecommendation.innerText =
+                "🚨 Heavy traffic detected! "
+                + "We strongly recommend checking "
+                + "an alternate route.";
+
+        }
+
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Dashboard error:",
+            error
+        );
+
+    }
+
+}
+
+
+// =================================================
+// FIRST TRAFFIC UPDATE
+// =================================================
+
+updateDashboard();
+
+
+// =================================================
+// UPDATE EVERY SECOND
+// =================================================
+
+setInterval(
+    updateDashboard,
+    1000
+);
+
+
+// =================================================
+// LOCATION
+// =================================================
+
+function getLocation() {
+
+
+    const status =
+        document.getElementById(
+            "locationStatus"
+        );
+
+
+    const coordinates =
+        document.getElementById(
+            "coordinates"
+        );
+
+
+    if (
+        !navigator.geolocation
+    ) {
+
+        status.innerText =
+            "❌ Geolocation is not supported by this browser.";
+
+        return;
+
+    }
+
+
+    status.innerText =
+        "📍 Detecting your location...";
+
+
+    navigator.geolocation.getCurrentPosition(
+
+        function(position) {
+
+
+            currentLatitude =
+                position.coords.latitude;
+
+
+            currentLongitude =
+                position.coords.longitude;
+
+
+            coordinates.innerText =
+                "Latitude: "
+                + currentLatitude
+                + " | Longitude: "
+                + currentLongitude;
+
+
+            status.innerText =
+                "✅ Location detected successfully.";
+
+
+            // =====================================
+            // CURRENT LOCATION MAP
+            // =====================================
+
+            const mapUrl =
+                "https://www.google.com/maps/search/?api=1"
+                + "&query="
+                + currentLatitude
+                + ","
+                + currentLongitude;
+
+
+            const mapButton =
+                document.getElementById(
+                    "currentLocationMap"
+                );
+
+
+            mapButton.href =
+                mapUrl;
+
+
+            mapButton.style.display =
+                "inline-block";
+
+
+        },
+
+
+        function(error) {
+
+
+            if (
+                error.code === 1
+            ) {
+
+                status.innerText =
+                    "❌ Location permission denied.";
+
+            }
+
+
+            else if (
+                error.code === 2
+            ) {
+
+                status.innerText =
+                    "❌ Location unavailable.";
+
+            }
+
+
+            else if (
+                error.code === 3
+            ) {
+
+                status.innerText =
+                    "❌ Location request timed out.";
+
+            }
+
+
+            else {
+
+                status.innerText =
+                    "❌ Unable to detect location.";
+
+            }
+
+        },
+
+        {
+            enableHighAccuracy: true,
+
+            timeout: 10000,
+
+            maximumAge: 0
+
+        }
+
+    );
+
+}
+
+
+// =================================================
+// GOOGLE MAPS ALTERNATE ROUTE
+// =================================================
+
+function openGoogleMaps() {
+
+
+    const destination =
+        document.getElementById(
+            "destination"
+        )
+        .value
+        .trim();
+
+
+    const routeStatus =
+        document.getElementById(
+            "routeStatus"
+        );
+
+
+    // =============================================
+    // CHECK DESTINATION
+    // =============================================
+
+    if (!destination) {
+
+        routeStatus.innerText =
+            "⚠️ Please enter a destination.";
+
+        return;
+
+    }
+
+
+    // =============================================
+    // CURRENT LOCATION AVAILABLE
+    // =============================================
+
+    if (
+        currentLatitude !== null
+        &&
+        currentLongitude !== null
+    ) {
+
+
+        const origin =
+            currentLatitude
+            + ","
+            + currentLongitude;
+
+
+        const mapsUrl =
+            "https://www.google.com/maps/dir/?api=1"
+            + "&origin="
+            + encodeURIComponent(
+                origin
+            )
+            + "&destination="
+            + encodeURIComponent(
+                destination
+            )
+            + "&travelmode=driving";
+
+
+        routeStatus.innerText =
+            "🗺️ Opening Google Maps from "
+            + "your current location...";
+
+
+        window.open(
+            mapsUrl,
+            "_blank"
+        );
+
+
+        return;
+
+    }
+
+
+    // =============================================
+    // LOCATION NOT DETECTED
+    // =============================================
+
+    routeStatus.innerText =
+        "📍 Location not detected. "
+        + "Please detect your location first.";
+
+}
+
+
+// =================================================
+// ENTER KEY SUPPORT
+// =================================================
+
+document
+    .getElementById("destination")
+    .addEventListener(
+        "keypress",
+        function(event) {
+
+            if (
+                event.key === "Enter"
+            ) {
+
+                openGoogleMaps();
+
+            }
+
+        }
+    );
+
+
+</script>
+
+
+</body>
+
+</html>

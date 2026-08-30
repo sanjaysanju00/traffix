@@ -1,0 +1,318 @@
+/* =================================================
+   GENERAL
+================================================= */
+
+* {
+
+    box-sizing: border-box;
+
+}
+
+
+body {
+
+    margin: 0;
+
+    padding: 30px;
+
+    font-family: Arial, sans-serif;
+
+    background: #f4f7fb;
+
+    text-align: center;
+
+}
+
+
+.container {
+
+    max-width: 600px;
+
+    margin: 40px auto;
+
+    background: white;
+
+    padding: 35px;
+
+    border-radius: 15px;
+
+    box-shadow:
+        0 4px 20px
+        rgba(0, 0, 0, 0.1);
+
+}
+
+
+.home-container {
+
+    margin-top: 100px;
+
+}
+
+
+h1 {
+
+    margin-bottom: 15px;
+
+}
+
+
+h2 {
+
+    margin-top: 10px;
+
+}
+
+
+p {
+
+    color: #555;
+
+    line-height: 1.5;
+
+}
+
+
+/* =================================================
+   FORMS
+================================================= */
+
+form {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 15px;
+
+    margin-top: 25px;
+
+}
+
+
+input {
+
+    width: 100%;
+
+    padding: 14px;
+
+    border: 1px solid #ccc;
+
+    border-radius: 8px;
+
+    font-size: 16px;
+
+}
+
+
+button {
+
+    width: 100%;
+
+    padding: 14px;
+
+    border: none;
+
+    border-radius: 8px;
+
+    background: #1976d2;
+
+    color: white;
+
+    font-size: 16px;
+
+    cursor: pointer;
+
+}
+
+
+button:hover {
+
+    opacity: 0.9;
+
+}
+
+
+/* =================================================
+   BUTTON LINKS
+================================================= */
+
+.buttons {
+
+    display: flex;
+
+    gap: 15px;
+
+    justify-content: center;
+
+    flex-wrap: wrap;
+
+    margin-top: 25px;
+
+}
+
+
+.buttons a {
+
+    display: inline-block;
+
+    padding: 13px 20px;
+
+    background: #1976d2;
+
+    color: white;
+
+    text-decoration: none;
+
+    border-radius: 8px;
+
+}
+
+
+/* =================================================
+   CARDS
+================================================= */
+
+.card {
+
+    background: #f8f9fa;
+
+    padding: 20px;
+
+    margin-top: 20px;
+
+    border-radius: 12px;
+
+}
+
+
+/* =================================================
+   VEHICLE / STATUS VALUE
+================================================= */
+
+.value {
+
+    font-size: 30px;
+
+    font-weight: bold;
+
+    margin-top: 10px;
+
+}
+
+
+/* =================================================
+   TRAFFIC STATUS
+================================================= */
+
+.card.normal {
+
+    border-left: 8px solid #2e7d32;
+
+}
+
+
+.card.moderate {
+
+    border-left: 8px solid #f9a825;
+
+}
+
+
+.card.heavy {
+
+    border-left: 8px solid #c62828;
+
+}
+
+
+/* =================================================
+   ERROR
+================================================= */
+
+.error {
+
+    background: #ffebee;
+
+    color: #c62828;
+
+    padding: 12px;
+
+    border-radius: 8px;
+
+    margin-top: 15px;
+
+}
+
+
+/* =================================================
+   PASSWORD SHOW/HIDE
+================================================= */
+
+.password-box {
+
+    position: relative;
+
+    width: 100%;
+
+}
+
+
+.password-box input {
+
+    padding-right: 55px;
+
+}
+
+
+.show-password {
+
+    position: absolute;
+
+    right: 5px;
+
+    top: 5px;
+
+    width: 45px;
+
+    height: 45px;
+
+    padding: 0;
+
+    background: transparent;
+
+    color: #333;
+
+    font-size: 20px;
+
+}
+
+
+.show-password:hover {
+
+    background: transparent;
+
+}
+
+
+/* =================================================
+   GOOGLE MAPS BUTTON
+================================================= */
+
+.map-button {
+
+    display: inline-block;
+
+    margin-top: 10px;
+
+    padding: 12px 18px;
+
+    background: #1976d2;
+
+    color: white;
+
+    text-decoration: none;
+
+    border-radius: 8px;
+
+}
