@@ -11,6 +11,16 @@
         content="width=device-width, initial-scale=1.0"
     >
 
+    <link
+        rel="manifest"
+        href="{{ url_for('static', filename='manifest.json') }}"
+    >
+
+    <meta
+        name="theme-color"
+        content="#0d6efd"
+    >
+
     <title>Smart Traffic Dashboard</title>
 
     <link
@@ -33,21 +43,18 @@
 
 
     <p>
+
         Welcome,
         <strong>{{ name }}</strong>
+
     </p>
 
-
-    <!-- =========================================
-         VEHICLE COUNT
-    ========================================== -->
 
     <div class="card">
 
         <h2>
             🚗 Vehicles Detected
         </h2>
-
 
         <div
             id="vehicles"
@@ -59,10 +66,6 @@
     </div>
 
 
-    <!-- =========================================
-         TRAFFIC STATUS
-    ========================================== -->
-
     <div
         class="card normal"
         id="trafficCard"
@@ -72,7 +75,6 @@
             🚦 Traffic Status
         </h2>
 
-
         <div
             id="status"
             class="value"
@@ -80,19 +82,12 @@
             NORMAL
         </div>
 
-
         <p id="trafficAlert">
-
             🟢 Traffic is normal.
-
         </p>
 
     </div>
 
-
-    <!-- =========================================
-         SYSTEM STATUS
-    ========================================== -->
 
     <div class="card">
 
@@ -100,19 +95,12 @@
             🟢 System Status
         </h2>
 
-
         <div class="value">
-
             ONLINE
-
         </div>
 
     </div>
 
-
-    <!-- =========================================
-         CURRENT LOCATION
-    ========================================== -->
 
     <div class="card">
 
@@ -156,10 +144,6 @@
     </div>
 
 
-    <!-- =========================================
-         ALTERNATE ROUTE
-    ========================================== -->
-
     <div
         class="card"
         id="routeCard"
@@ -169,8 +153,6 @@
             🗺️ Alternate Route Suggestion
         </h2>
 
-
-        <!-- Dynamic traffic message -->
 
         <p id="routeRecommendation">
 
@@ -213,10 +195,6 @@
     </div>
 
 
-    <!-- =========================================
-         NAVIGATION BUTTONS
-    ========================================== -->
-
     <div class="buttons">
 
 
@@ -243,18 +221,14 @@
 <script>
 
 
-// =================================================
-// GLOBAL LOCATION VARIABLES
-// =================================================
-
 let currentLatitude = null;
 
 let currentLongitude = null;
 
 
-// =================================================
+// ==========================================
 // LIVE TRAFFIC UPDATE
-// =================================================
+// ==========================================
 
 async function updateDashboard() {
 
@@ -268,19 +242,11 @@ async function updateDashboard() {
             await response.json();
 
 
-        // =========================================
-        // VEHICLE COUNT
-        // =========================================
-
         document.getElementById(
             "vehicles"
         ).innerText =
             data.vehicle_count;
 
-
-        // =========================================
-        // TRAFFIC STATUS
-        // =========================================
 
         const statusElement =
             document.getElementById(
@@ -318,11 +284,9 @@ async function updateDashboard() {
             status;
 
 
-        // =========================================
-        // NORMAL
-        // =========================================
-
-        if (status === "NORMAL") {
+        if (
+            status === "NORMAL"
+        ) {
 
             trafficCard.className =
                 "card normal";
@@ -338,10 +302,6 @@ async function updateDashboard() {
 
         }
 
-
-        // =========================================
-        // MODERATE
-        // =========================================
 
         else if (
             status === "MODERATE"
@@ -361,10 +321,6 @@ async function updateDashboard() {
 
         }
 
-
-        // =========================================
-        // HEAVY
-        // =========================================
 
         else if (
             status === "HEAVY"
@@ -386,8 +342,8 @@ async function updateDashboard() {
 
         }
 
-
     }
+
 
     catch (error) {
 
@@ -401,16 +357,8 @@ async function updateDashboard() {
 }
 
 
-// =================================================
-// FIRST TRAFFIC UPDATE
-// =================================================
-
 updateDashboard();
 
-
-// =================================================
-// UPDATE EVERY SECOND
-// =================================================
 
 setInterval(
     updateDashboard,
@@ -418,12 +366,11 @@ setInterval(
 );
 
 
-// =================================================
+// ==========================================
 // LOCATION
-// =================================================
+// ==========================================
 
 function getLocation() {
-
 
     const status =
         document.getElementById(
@@ -476,10 +423,6 @@ function getLocation() {
             status.innerText =
                 "✅ Location detected successfully.";
 
-
-            // =====================================
-            // CURRENT LOCATION MAP
-            // =====================================
 
             const mapUrl =
                 "https://www.google.com/maps/search/?api=1"
@@ -548,7 +491,9 @@ function getLocation() {
 
         },
 
+
         {
+
             enableHighAccuracy: true,
 
             timeout: 10000,
@@ -562,12 +507,11 @@ function getLocation() {
 }
 
 
-// =================================================
-// GOOGLE MAPS ALTERNATE ROUTE
-// =================================================
+// ==========================================
+// GOOGLE MAPS
+// ==========================================
 
 function openGoogleMaps() {
-
 
     const destination =
         document.getElementById(
@@ -583,10 +527,6 @@ function openGoogleMaps() {
         );
 
 
-    // =============================================
-    // CHECK DESTINATION
-    // =============================================
-
     if (!destination) {
 
         routeStatus.innerText =
@@ -596,10 +536,6 @@ function openGoogleMaps() {
 
     }
 
-
-    // =============================================
-    // CURRENT LOCATION AVAILABLE
-    // =============================================
 
     if (
         currentLatitude !== null
@@ -643,10 +579,6 @@ function openGoogleMaps() {
     }
 
 
-    // =============================================
-    // LOCATION NOT DETECTED
-    // =============================================
-
     routeStatus.innerText =
         "📍 Location not detected. "
         + "Please detect your location first.";
@@ -654,9 +586,9 @@ function openGoogleMaps() {
 }
 
 
-// =================================================
+// ==========================================
 // ENTER KEY SUPPORT
-// =================================================
+// ==========================================
 
 document
     .getElementById("destination")
@@ -675,6 +607,47 @@ document
         }
     );
 
+
+// ==========================================
+// SERVICE WORKER / PWA
+// ==========================================
+
+if ("serviceWorker" in navigator) {
+
+    window.addEventListener(
+        "load",
+        function () {
+
+            navigator.serviceWorker.register(
+                "/firebase-messaging-sw.js"
+            )
+
+            .then(
+                function (registration) {
+
+                    console.log(
+                        "✅ Smart Traffic service worker registered:",
+                        registration.scope
+                    );
+
+                }
+            )
+
+            .catch(
+                function (error) {
+
+                    console.error(
+                        "❌ Service worker registration failed:",
+                        error
+                    );
+
+                }
+            );
+
+        }
+    );
+
+}
 
 </script>
 

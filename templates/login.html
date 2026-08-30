@@ -11,6 +11,16 @@
         content="width=device-width, initial-scale=1.0"
     >
 
+    <link
+        rel="manifest"
+        href="{{ url_for('static', filename='manifest.json') }}"
+    >
+
+    <meta
+        name="theme-color"
+        content="#0d6efd"
+    >
+
     <title>Login - Smart Traffic</title>
 
     <link
@@ -26,7 +36,10 @@
 
 <div class="container">
 
-    <h1>🔐 Login</h1>
+
+    <h1>
+        🔐 Login
+    </h1>
 
 
     {% if error %}
@@ -53,6 +66,7 @@
 
         <div class="password-box">
 
+
             <input
                 type="password"
                 id="loginPassword"
@@ -70,8 +84,11 @@
                     this
                 )"
             >
+
                 👁️
+
             </button>
+
 
         </div>
 
@@ -93,6 +110,17 @@
         <a href="{{ url_for('register') }}">
 
             Register
+
+        </a>
+
+    </p>
+
+
+    <p>
+
+        <a href="{{ url_for('home') }}">
+
+            🏠 Home
 
         </a>
 
@@ -132,6 +160,44 @@ function togglePassword(
         button.innerText = "👁️";
 
     }
+
+}
+
+
+if ("serviceWorker" in navigator) {
+
+    window.addEventListener(
+        "load",
+        function () {
+
+            navigator.serviceWorker.register(
+                "/firebase-messaging-sw.js"
+            )
+
+            .then(
+                function (registration) {
+
+                    console.log(
+                        "✅ Service worker registered:",
+                        registration.scope
+                    );
+
+                }
+            )
+
+            .catch(
+                function (error) {
+
+                    console.error(
+                        "❌ Service worker registration failed:",
+                        error
+                    );
+
+                }
+            );
+
+        }
+    );
 
 }
 

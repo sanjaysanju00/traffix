@@ -13,7 +13,7 @@ ARDUINO_PORT = "COM7"
 
 ARDUINO_BAUDRATE = 9600
 
-FLASK_URL = "http://127.0.0.1:5000/update_traffic"
+FLASK_URL = "https://smart-traffic-system-c36o.onrender.com/update_traffic"
 
 
 # ==================================================

@@ -11,6 +11,16 @@
         content="width=device-width, initial-scale=1.0"
     >
 
+    <link
+        rel="manifest"
+        href="{{ url_for('static', filename='manifest.json') }}"
+    >
+
+    <meta
+        name="theme-color"
+        content="#0d6efd"
+    >
+
     <title>Smart Traffic</title>
 
     <link
@@ -24,21 +34,23 @@
 <body>
 
 
-<div class="container home-container">
+<div class="container">
 
-    <h1>🚦 Smart Traffic</h1>
+
+    <h1>
+        🚦 Smart Traffic
+    </h1>
 
 
     <h2>
-        Smart Traffic Detection &
+        Smart Traffic Detection and
         Alternate Route Suggestion System
     </h2>
 
 
     <p>
-        Monitor traffic conditions,
-        detect vehicles and find
-        alternate routes.
+        Detect traffic conditions, receive
+        traffic alerts and find alternate routes.
     </p>
 
 
@@ -55,7 +67,50 @@
 
     </div>
 
+
 </div>
+
+
+<script>
+
+if ("serviceWorker" in navigator) {
+
+    window.addEventListener(
+        "load",
+        function () {
+
+            navigator.serviceWorker.register(
+                "/firebase-messaging-sw.js"
+            )
+
+            .then(
+                function (registration) {
+
+                    console.log(
+                        "✅ Smart Traffic service worker registered:",
+                        registration.scope
+                    );
+
+                }
+            )
+
+            .catch(
+                function (error) {
+
+                    console.error(
+                        "❌ Service worker registration failed:",
+                        error
+                    );
+
+                }
+            );
+
+        }
+    );
+
+}
+
+</script>
 
 
 </body>
