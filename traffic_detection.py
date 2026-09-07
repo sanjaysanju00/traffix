@@ -3,6 +3,8 @@ import cv2
 import serial
 import time
 import requests
+from collections import deque
+import statistics
 
 
 # ==================================================
@@ -15,6 +17,12 @@ ARDUINO_BAUDRATE = 9600
 
 FLASK_URL = "https://smart-traffic-system-c36o.onrender.com/update_traffic"
 
+# Send traffic data to Render once every second
+SERVER_UPDATE_INTERVAL = 1.0
+
+# Number of recent vehicle counts used for smoothing
+SMOOTHING_FRAMES = 5
+
 
 # ==================================================
 # CONNECT TO ARDUINO
@@ -23,29 +31,18 @@ FLASK_URL = "https://smart-traffic-system-c36o.onrender.com/update_traffic"
 try:
 
     arduino = serial.Serial(
-
         ARDUINO_PORT,
-
         ARDUINO_BAUDRATE,
-
         timeout=1
-
     )
 
     time.sleep(2)
 
-    print(
-        "✅ Arduino connected:",
-        ARDUINO_PORT
-    )
-
+    print("✅ Arduino connected:", ARDUINO_PORT)
 
 except Exception as error:
 
-    print(
-        "❌ Arduino connection failed:"
-    )
-
+    print("❌ Arduino connection failed:")
     print(error)
 
     exit()
@@ -55,9 +52,20 @@ except Exception as error:
 # LOAD YOLO
 # ==================================================
 
-model = YOLO(
-    "yolo11n.pt"
-)
+try:
+
+    model = YOLO("yolo11n.pt")
+
+    print("✅ YOLO model loaded.")
+
+except Exception as error:
+
+    print("❌ YOLO model could not be loaded:")
+    print(error)
+
+    arduino.close()
+
+    exit()
 
 
 # ==================================================
@@ -66,33 +74,13 @@ model = YOLO(
 
 camera = cv2.VideoCapture(0)
 
-
 if not camera.isOpened():
 
-    print(
-        "❌ Camera could not be opened."
-    )
+    print("❌ Camera could not be opened.")
 
     arduino.close()
 
     exit()
-
-
-# ==================================================
-# START MESSAGE
-# ==================================================
-
-print("======================================")
-print("SMART TRAFFIC SYSTEM")
-print("======================================")
-print("Camera       : ON")
-print("YOLO         : ON")
-print("Arduino      : ON")
-print("Flask        : ON")
-print("Confirmation : 5 seconds")
-print("Cooldown     : 60 seconds")
-print("Press Q      : STOP")
-print("======================================")
 
 
 # ==================================================
@@ -113,235 +101,349 @@ vehicle_classes = {
 
 
 # ==================================================
-# LAST ARDUINO STATUS
+# TRAFFIC SETTINGS
+# ==================================================
+
+# 0 - 3 vehicles = NORMAL
+# 4 - 6 vehicles = MODERATE
+# 7+ vehicles = HEAVY
+
+def get_traffic_status(vehicle_count):
+
+    if vehicle_count <= 3:
+
+        return "NORMAL"
+
+    elif vehicle_count <= 6:
+
+        return "MODERATE"
+
+    else:
+
+        return "HEAVY"
+
+
+# ==================================================
+# STATUS / SERVER VARIABLES
 # ==================================================
 
 last_arduino_status = ""
+
+last_server_status = ""
+
+last_server_update = 0
+
+
+# ==================================================
+# VEHICLE COUNT SMOOTHING
+# ==================================================
+
+recent_counts = deque(
+    maxlen=SMOOTHING_FRAMES
+)
+
+
+# ==================================================
+# START MESSAGE
+# ==================================================
+
+print("======================================")
+print("SMART TRAFFIC SYSTEM")
+print("======================================")
+print("Camera       : ON")
+print("YOLO         : ON")
+print("Arduino      : ON")
+print("Flask        : ON")
+print("Count smooth : 5 frames")
+print("Server update: 1 second")
+print("Confirmation : 2 seconds")
+print("Press Q      : STOP")
+print("======================================")
 
 
 # ==================================================
 # MAIN LOOP
 # ==================================================
 
-while True:
+try:
 
-    success, frame = camera.read()
+    while True:
+
+        # ==========================================
+        # READ CAMERA FRAME
+        # ==========================================
+
+        success, frame = camera.read()
+
+        if not success:
+
+            print("❌ Camera frame error.")
+
+            break
 
 
-    if not success:
+        # ==========================================
+        # YOLO DETECTION
+        # ==========================================
 
-        print(
-            "❌ Camera frame error."
+        results = model(
+            frame,
+            verbose=False
         )
 
-        break
+
+        raw_vehicle_count = 0
 
 
-    # ==============================================
-    # YOLO
-    # ==============================================
+        # ==========================================
+        # COUNT VEHICLES
+        # ==========================================
 
-    results = model(
+        for result in results:
 
-        frame,
+            for box in result.boxes:
 
-        verbose=False
+                class_id = int(
+                    box.cls[0]
+                )
 
-    )
+                if class_id in vehicle_classes:
+
+                    raw_vehicle_count += 1
 
 
-    vehicle_count = 0
+        # ==========================================
+        # SMOOTH VEHICLE COUNT
+        # ==========================================
+
+        recent_counts.append(
+            raw_vehicle_count
+        )
 
 
-    # ==============================================
-    # COUNT VEHICLES
-    # ==============================================
+        # Median prevents one bad YOLO frame
+        # from immediately changing traffic status.
 
-    for result in results:
-
-        for box in result.boxes:
-
-            class_id = int(
-                box.cls[0]
+        vehicle_count = int(
+            statistics.median(
+                recent_counts
             )
+        )
 
 
-            if class_id in vehicle_classes:
+        # ==========================================
+        # TRAFFIC STATUS
+        # ==========================================
 
-                vehicle_count += 1
-
-
-    # ==============================================
-    # TRAFFIC STATUS
-    # ==============================================
-
-    if vehicle_count <= 3:
-
-        traffic_status = "NORMAL"
+        traffic_status = get_traffic_status(
+            vehicle_count
+        )
 
 
-    elif vehicle_count <= 6:
+        # ==========================================
+        # SEND TO ARDUINO
+        # ==========================================
 
-        traffic_status = "MODERATE"
+        if traffic_status != last_arduino_status:
 
+            try:
 
-    else:
+                arduino.write(
+                    (
+                        traffic_status + "\n"
+                    ).encode()
+                )
 
-        traffic_status = "HEAVY"
+                print(
+                    f"🚦 Arduino: {traffic_status}"
+                )
 
-
-    # ==============================================
-    # SEND TO ARDUINO
-    # ==============================================
-
-    if traffic_status != last_arduino_status:
-
-        try:
-
-            arduino.write(
-
-                (
+                last_arduino_status = (
                     traffic_status
-                    + "\n"
-                ).encode()
+                )
 
-            )
+            except Exception as error:
 
-            print(
-                "Arduino:",
-                traffic_status
-            )
-
-            last_arduino_status = traffic_status
+                print(
+                    "❌ Arduino error:",
+                    error
+                )
 
 
-        except Exception as error:
+        # ==========================================
+        # SEND TO RENDER
+        # ==========================================
 
-            print(
-                "❌ Arduino error:",
-                error
-            )
+        current_time = time.time()
 
 
-    # ==============================================
-    # SEND TO FLASK
-    # ==============================================
+        if (
+            current_time - last_server_update
+            >= SERVER_UPDATE_INTERVAL
+        ):
 
-    try:
+            try:
 
-        response = requests.post(
+                response = requests.post(
 
-            FLASK_URL,
+                    FLASK_URL,
 
-            json={
+                    json={
 
-                "vehicle_count":
-                    vehicle_count,
+                        "vehicle_count":
+                            vehicle_count,
 
-                "traffic_status":
-                    traffic_status
+                        "traffic_status":
+                            traffic_status
 
-            },
+                    },
 
-            timeout=2
+                    timeout=5
+
+                )
+
+
+                if response.status_code == 200:
+
+                    # Print only when status changes
+                    # to keep the terminal readable.
+
+                    if traffic_status != last_server_status:
+
+                        print(
+                            f"🌐 Render: "
+                            f"{traffic_status} | "
+                            f"Vehicles: "
+                            f"{vehicle_count}"
+                        )
+
+                        last_server_status = (
+                            traffic_status
+                        )
+
+                else:
+
+                    print(
+                        "❌ Flask error:",
+                        response.status_code
+                    )
+
+            except Exception as error:
+
+                print(
+                    "❌ Flask connection error:",
+                    error
+                )
+
+
+            last_server_update = current_time
+
+
+        # ==========================================
+        # DISPLAY YOLO RESULT
+        # ==========================================
+
+        annotated_frame = results[0].plot()
+
+
+        cv2.putText(
+
+            annotated_frame,
+
+            f"Vehicles: {vehicle_count}",
+
+            (20, 40),
+
+            cv2.FONT_HERSHEY_SIMPLEX,
+
+            1,
+
+            (0, 255, 0),
+
+            2
 
         )
 
 
-        if response.status_code != 200:
+        cv2.putText(
 
-            print(
-                "❌ Flask error:",
-                response.status_code
-            )
+            annotated_frame,
 
+            f"Traffic: {traffic_status}",
 
-    except Exception as error:
+            (20, 80),
 
-        print(
-            "❌ Flask connection error:",
-            error
+            cv2.FONT_HERSHEY_SIMPLEX,
+
+            1,
+
+            (0, 255, 255),
+
+            2
+
         )
 
 
-    # ==============================================
-    # DISPLAY
-    # ==============================================
+        # Show raw count for debugging
 
-    annotated_frame = results[0].plot()
+        cv2.putText(
 
+            annotated_frame,
 
-    cv2.putText(
+            f"Raw count: {raw_vehicle_count}",
 
-        annotated_frame,
+            (20, 120),
 
-        f"Vehicles: {vehicle_count}",
+            cv2.FONT_HERSHEY_SIMPLEX,
 
-        (20, 40),
+            0.7,
 
-        cv2.FONT_HERSHEY_SIMPLEX,
+            (255, 255, 255),
 
-        1,
+            2
 
-        (0, 255, 0),
-
-        2
-
-    )
+        )
 
 
-    cv2.putText(
+        # ==========================================
+        # SHOW CAMERA
+        # ==========================================
 
-        annotated_frame,
+        cv2.imshow(
 
-        f"Traffic: {traffic_status}",
+            "Smart Traffic Detection",
 
-        (20, 80),
+            annotated_frame
 
-        cv2.FONT_HERSHEY_SIMPLEX,
-
-        1,
-
-        (0, 255, 255),
-
-        2
-
-    )
+        )
 
 
-    # ==============================================
-    # SHOW CAMERA
-    # ==============================================
+        # ==========================================
+        # QUIT
+        # ==========================================
 
-    cv2.imshow(
+        if cv2.waitKey(1) & 0xFF == ord("q"):
 
-        "Smart Traffic Detection",
-
-        annotated_frame
-
-    )
-
-
-    # ==============================================
-    # QUIT
-    # ==============================================
-
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-
-        break
+            break
 
 
 # ==================================================
 # CLEANUP
 # ==================================================
 
-camera.release()
+except KeyboardInterrupt:
 
-arduino.close()
-
-cv2.destroyAllWindows()
+    print("\n🛑 System stopped by user.")
 
 
-print("======================================")
-print("Smart Traffic System stopped.")
-print("======================================")
+finally:
+
+    camera.release()
+
+    arduino.close()
+
+    cv2.destroyAllWindows()
+
+    print("======================================")
+    print("Smart Traffic System stopped.")
+    print("======================================")

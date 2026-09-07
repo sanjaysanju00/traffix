@@ -34,9 +34,14 @@ from firebase_admin import (
 app = Flask(__name__)
 
 app.secret_key = "smarttraffic_fresh_secret_key"
+
+# Keep users logged in for 30 days
 app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30
+
 app.config["SESSION_COOKIE_HTTPONLY"] = True
+
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
 
 # ==================================================
 # DATABASE
@@ -47,7 +52,9 @@ DATABASE = "traffic.db"
 
 def get_db():
 
-    connection = sqlite3.connect(DATABASE)
+    connection = sqlite3.connect(
+        DATABASE
+    )
 
     connection.row_factory = sqlite3.Row
 
@@ -60,7 +67,11 @@ def create_database():
 
     cursor = connection.cursor()
 
+
+    # ==================================================
     # USERS
+    # ==================================================
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
 
@@ -75,7 +86,11 @@ def create_database():
         )
     """)
 
+
+    # ==================================================
     # FIREBASE TOKENS
+    # ==================================================
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS firebase_tokens (
 
@@ -87,6 +102,7 @@ def create_database():
 
         )
     """)
+
 
     connection.commit()
 
@@ -100,7 +116,9 @@ create_database()
 # FIREBASE CONFIGURATION
 # ==================================================
 
-FIREBASE_CREDENTIALS = "firebase-service-account.json"
+FIREBASE_CREDENTIALS = (
+    "firebase-service-account.json"
+)
 
 firebase_initialized = False
 
@@ -108,16 +126,28 @@ firebase_initialized = False
 try:
 
     # ==================================================
-    # METHOD 1
-    # RENDER SECRET FILE
+    # METHOD 1 — RENDER SECRET FILE
     # ==================================================
 
-    if os.path.exists(FIREBASE_CREDENTIALS):
+    if os.path.exists(
+        FIREBASE_CREDENTIALS
+    ):
 
-        print("======================================")
-        print("Firebase JSON file found.")
-        print("Loading Firebase service account...")
-        print("======================================")
+        print(
+            "======================================"
+        )
+
+        print(
+            "Firebase JSON file found."
+        )
+
+        print(
+            "Loading Firebase service account..."
+        )
+
+        print(
+            "======================================"
+        )
 
 
         cred = credentials.Certificate(
@@ -133,24 +163,50 @@ try:
         firebase_initialized = True
 
 
-        print("======================================")
-        print("Firebase Admin initialized successfully.")
-        print("Using Secret File:")
-        print(FIREBASE_CREDENTIALS)
-        print("======================================")
+        print(
+            "======================================"
+        )
+
+        print(
+            "Firebase Admin initialized successfully."
+        )
+
+        print(
+            "Using Secret File:"
+        )
+
+        print(
+            FIREBASE_CREDENTIALS
+        )
+
+        print(
+            "======================================"
+        )
 
 
     # ==================================================
-    # METHOD 2
-    # ENVIRONMENT VARIABLE
+    # METHOD 2 — ENVIRONMENT VARIABLE
     # ==================================================
 
-    elif os.environ.get("FIREBASE_SERVICE_ACCOUNT"):
+    elif os.environ.get(
+        "FIREBASE_SERVICE_ACCOUNT"
+    ):
 
-        print("======================================")
-        print("Firebase JSON file not found.")
-        print("Trying FIREBASE_SERVICE_ACCOUNT...")
-        print("======================================")
+        print(
+            "======================================"
+        )
+
+        print(
+            "Firebase JSON file not found."
+        )
+
+        print(
+            "Trying FIREBASE_SERVICE_ACCOUNT..."
+        )
+
+        print(
+            "======================================"
+        )
 
 
         firebase_json = os.environ.get(
@@ -176,32 +232,65 @@ try:
         firebase_initialized = True
 
 
-        print("======================================")
-        print("Firebase Admin initialized successfully.")
-        print("Using FIREBASE_SERVICE_ACCOUNT.")
-        print("======================================")
+        print(
+            "======================================"
+        )
 
+        print(
+            "Firebase Admin initialized successfully."
+        )
 
-    # ==================================================
-    # NO FIREBASE CONFIGURATION
-    # ==================================================
+        print(
+            "Using FIREBASE_SERVICE_ACCOUNT."
+        )
+
+        print(
+            "======================================"
+        )
+
 
     else:
 
-        print("======================================")
-        print("FIREBASE CONFIGURATION ERROR")
-        print("Firebase service account JSON file")
-        print("not found and FIREBASE_SERVICE_ACCOUNT")
-        print("is not configured.")
-        print("======================================")
+        print(
+            "======================================"
+        )
+
+        print(
+            "FIREBASE CONFIGURATION ERROR"
+        )
+
+        print(
+            "Firebase service account JSON file"
+        )
+
+        print(
+            "not found and FIREBASE_SERVICE_ACCOUNT"
+        )
+
+        print(
+            "is not configured."
+        )
+
+        print(
+            "======================================"
+        )
 
 
 except Exception as error:
 
-    print("======================================")
-    print("Firebase initialization failed:")
+    print(
+        "======================================"
+    )
+
+    print(
+        "Firebase initialization failed:"
+    )
+
     print(error)
-    print("======================================")
+
+    print(
+        "======================================"
+    )
 
 
 # ==================================================
@@ -221,22 +310,11 @@ traffic_data = {
 # NOTIFICATION CONTROL
 # ==================================================
 
-# Current status being confirmed
-
 candidate_status = ""
-
-
-# Time when candidate status first appeared
 
 candidate_start_time = 0
 
-
-# Last status for which notification was sent
-
 last_notified_status = ""
-
-
-# Time when last notification was sent
 
 last_notification_time = 0
 
@@ -245,16 +323,25 @@ last_notification_time = 0
 # SETTINGS
 # ==================================================
 
-CONFIRMATION_TIME = 5
+# Traffic must remain unchanged for this period
+# before NORMAL/MODERATE is considered confirmed.
 
-NOTIFICATION_COOLDOWN = 60
+CONFIRMATION_TIME = 2
+
+
+# Small protection against duplicate notifications.
+# This is NOT a global 60-second lock.
+
+NOTIFICATION_COOLDOWN = 10
 
 
 # ==================================================
 # FIREBASE SERVICE WORKER
 # ==================================================
 
-@app.route("/firebase-messaging-sw.js")
+@app.route(
+    "/firebase-messaging-sw.js"
+)
 def firebase_messaging_sw():
 
     return send_from_directory(
@@ -273,11 +360,15 @@ def firebase_messaging_sw():
 @app.route("/")
 def home():
 
+    # If already logged in,
+    # open dashboard directly.
+
     if "user_id" in session:
 
         return redirect(
             url_for("dashboard")
         )
+
 
     return render_template(
         "home.html"
@@ -328,8 +419,11 @@ def register():
 
 
         cursor.execute(
+
             "SELECT id FROM users WHERE email = ?",
+
             (email,)
+
         )
 
 
@@ -342,8 +436,11 @@ def register():
 
 
             return render_template(
+
                 "register.html",
+
                 error="Email already registered."
+
             )
 
 
@@ -353,6 +450,7 @@ def register():
 
 
         cursor.execute(
+
             """
             INSERT INTO users
             (name, email, password)
@@ -365,6 +463,7 @@ def register():
                 email,
                 password_hash
             )
+
         )
 
 
@@ -413,8 +512,11 @@ def login():
 
 
         cursor.execute(
+
             "SELECT * FROM users WHERE email = ?",
+
             (email,)
+
         )
 
 
@@ -425,16 +527,31 @@ def login():
 
 
         if user and check_password_hash(
+
             user["password"],
+
             password
+
         ):
+
+            # Make login session persistent
+
             session.permanent = True
 
-            session["user_id"] = user["id"]
 
-            session["user_name"] = user["name"]
+            session["user_id"] = (
+                user["id"]
+            )
 
-            session["user_email"] = user["email"]
+
+            session["user_name"] = (
+                user["name"]
+            )
+
+
+            session["user_email"] = (
+                user["email"]
+            )
 
 
             return redirect(
@@ -443,8 +560,11 @@ def login():
 
 
         return render_template(
+
             "login.html",
+
             error="Invalid email or password."
+
         )
 
 
@@ -513,8 +633,11 @@ def traffic():
 # ==================================================
 
 def send_traffic_notification(
+
     traffic_status,
+
     vehicle_count
+
 ):
 
     if not firebase_initialized:
@@ -532,10 +655,12 @@ def send_traffic_notification(
 
 
     cursor.execute(
+
         """
         SELECT token
         FROM firebase_tokens
         """
+
     )
 
 
@@ -568,8 +693,12 @@ def send_traffic_notification(
                 title="🚦 Smart Traffic Alert",
 
                 body=(
+
                     f"Traffic is {traffic_status}. "
-                    f"Vehicles detected: {vehicle_count}"
+
+                    f"Vehicles detected: "
+                    f"{vehicle_count}"
+
                 )
 
             ),
@@ -665,6 +794,11 @@ def update_traffic():
         vehicle_count = 0
 
 
+    if vehicle_count < 0:
+
+        vehicle_count = 0
+
+
     # ==================================================
     # TRAFFIC STATUS
     # ==================================================
@@ -672,8 +806,11 @@ def update_traffic():
     traffic_status = str(
 
         data.get(
+
             "traffic_status",
+
             "NORMAL"
+
         )
 
     ).strip().upper()
@@ -682,7 +819,9 @@ def update_traffic():
     if traffic_status not in [
 
         "NORMAL",
+
         "MODERATE",
+
         "HEAVY"
 
     ]:
@@ -691,7 +830,7 @@ def update_traffic():
 
 
     # ==================================================
-    # UPDATE DASHBOARD
+    # UPDATE DASHBOARD IMMEDIATELY
     # ==================================================
 
     traffic_data["vehicle_count"] = (
@@ -704,8 +843,10 @@ def update_traffic():
 
 
     print(
+
         f"Traffic: {traffic_status} | "
         f"Vehicles: {vehicle_count}"
+
     )
 
 
@@ -718,37 +859,44 @@ def update_traffic():
 
     if traffic_status == "HEAVY":
 
-        # ------------------------------------------------
-        # HEAVY IS IMMEDIATE
-        # ------------------------------------------------
+        # Heavy is sent immediately when
+        # status changes into HEAVY.
 
         if last_notified_status != "HEAVY":
 
-            print("======================================")
+            print(
+                "======================================"
+            )
 
             print(
                 "🚨 HEAVY TRAFFIC DETECTED"
             )
 
             print(
-                "🚨 HEAVY notification is IMMEDIATE"
+                "🚨 HEAVY notification"
             )
 
-            print("======================================")
+            print(
+                "======================================"
+            )
 
 
-            sent_count = send_traffic_notification(
+            sent_count = (
+                send_traffic_notification(
 
-                traffic_status,
+                    traffic_status,
 
-                vehicle_count
+                    vehicle_count
 
+                )
             )
 
 
             if sent_count > 0:
 
-                last_notified_status = "HEAVY"
+                last_notified_status = (
+                    "HEAVY"
+                )
 
                 last_notification_time = (
                     current_time
@@ -757,12 +905,6 @@ def update_traffic():
                 candidate_status = ""
 
                 candidate_start_time = 0
-
-
-                print(
-                    f"✅ HEAVY notification sent to "
-                    f"{sent_count} device(s)."
-                )
 
 
                 return jsonify({
@@ -776,17 +918,13 @@ def update_traffic():
                         traffic_status,
 
                     "notification":
-                        "HEAVY sent immediately",
+                        "HEAVY sent",
 
                     "notification_sent":
                         sent_count
 
                 })
 
-
-        # ------------------------------------------------
-        # HEAVY ALREADY NOTIFIED
-        # ------------------------------------------------
 
         return jsonify({
 
@@ -805,7 +943,7 @@ def update_traffic():
 
 
     # ==================================================
-    # SAME AS LAST NOTIFIED STATUS
+    # SAME STATUS ALREADY NOTIFIED
     # ==================================================
 
     if traffic_status == last_notified_status:
@@ -832,23 +970,31 @@ def update_traffic():
 
 
     # ==================================================
-    # NEW STATUS DETECTED
+    # NEW STATUS
     # ==================================================
 
     if traffic_status != candidate_status:
 
-        candidate_status = traffic_status
+        candidate_status = (
+            traffic_status
+        )
 
-        candidate_start_time = current_time
-
-
-        print(
-            f"⏳ {traffic_status} detected."
+        candidate_start_time = (
+            current_time
         )
 
 
         print(
-            f"Waiting {CONFIRMATION_TIME} seconds..."
+
+            f"⏳ {traffic_status} detected."
+
+        )
+
+        print(
+
+            f"Waiting {CONFIRMATION_TIME} "
+            f"seconds..."
+
         )
 
 
@@ -869,7 +1015,7 @@ def update_traffic():
 
 
     # ==================================================
-    # 5 SECOND CONFIRMATION
+    # CONFIRMATION
     # ==================================================
 
     elapsed = (
@@ -900,7 +1046,7 @@ def update_traffic():
 
 
     # ==================================================
-    # 60 SECOND COOLDOWN
+    # SMALL DUPLICATE PROTECTION
     # ==================================================
 
     cooldown_elapsed = (
@@ -912,22 +1058,21 @@ def update_traffic():
     )
 
 
-    if cooldown_elapsed < NOTIFICATION_COOLDOWN:
+    # Only block if the status is the same
+    # as the previous notification.
+    #
+    # A genuine status change is allowed through.
 
-        remaining = (
+    if (
 
-            NOTIFICATION_COOLDOWN
-            -
-            cooldown_elapsed
+        last_notified_status == traffic_status
 
-        )
+        and
 
+        cooldown_elapsed <
+        NOTIFICATION_COOLDOWN
 
-        print(
-            f"🔒 Notification locked. "
-            f"{int(remaining)} seconds remaining."
-        )
-
+    ):
 
         return jsonify({
 
@@ -940,19 +1085,18 @@ def update_traffic():
                 traffic_status,
 
             "notification":
-                "cooldown",
-
-            "remaining":
-                int(remaining)
+                "cooldown"
 
         })
 
 
     # ==================================================
-    # SEND NORMAL / MODERATE NOTIFICATION
+    # SEND NORMAL / MODERATE
     # ==================================================
 
-    print("======================================")
+    print(
+        "======================================"
+    )
 
     print(
         "🔔 SENDING TRAFFIC NOTIFICATION"
@@ -968,25 +1112,31 @@ def update_traffic():
         vehicle_count
     )
 
-    print("======================================")
+    print(
+        "======================================"
+    )
 
 
-    sent_count = send_traffic_notification(
+    sent_count = (
+        send_traffic_notification(
 
-        traffic_status,
+            traffic_status,
 
-        vehicle_count
+            vehicle_count
 
+        )
     )
 
 
     # ==================================================
-    # RECORD NOTIFICATION
+    # RECORD SUCCESSFUL NOTIFICATION
     # ==================================================
 
     if sent_count > 0:
 
-        last_notified_status = traffic_status
+        last_notified_status = (
+            traffic_status
+        )
 
         last_notification_time = (
             current_time
@@ -998,8 +1148,10 @@ def update_traffic():
 
 
         print(
+
             f"✅ Notification sent to "
             f"{sent_count} device(s)."
+
         )
 
 
@@ -1087,6 +1239,12 @@ def firebase_token():
         cursor = connection.cursor()
 
 
+        # If this token already exists,
+        # update its user_id.
+        #
+        # If it is a new phone,
+        # create a new row.
+
         cursor.execute(
 
             """
@@ -1097,8 +1255,11 @@ def firebase_token():
             """,
 
             (
+
                 session["user_id"],
+
                 token
+
             )
 
         )
@@ -1185,6 +1346,7 @@ def test_firebase_notification():
 
 
         cursor.execute(
+
             """
             SELECT token
             FROM firebase_tokens
@@ -1192,8 +1354,11 @@ def test_firebase_notification():
             """,
 
             (
+
                 session["user_id"],
+
             )
+
         )
 
 
@@ -1226,8 +1391,10 @@ def test_firebase_notification():
                     title="🚦 Smart Traffic",
 
                     body=(
+
                         "Test notification from "
                         "Smart Traffic Fresh."
+
                     )
 
                 ),
@@ -1346,10 +1513,15 @@ if __name__ == "__main__":
         host="0.0.0.0",
 
         port=int(
+
             os.environ.get(
+
                 "PORT",
+
                 5000
+
             )
+
         ),
 
         debug=False,
