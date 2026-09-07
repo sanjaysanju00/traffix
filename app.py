@@ -34,7 +34,9 @@ from firebase_admin import (
 app = Flask(__name__)
 
 app.secret_key = "smarttraffic_fresh_secret_key"
-
+app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 # ==================================================
 # DATABASE
@@ -420,6 +422,7 @@ def login():
             user["password"],
             password
         ):
+            session.permanent = True
 
             session["user_id"] = user["id"]
 
