@@ -11,7 +11,6 @@ from flask import (
 
 import sqlite3
 import os
-import time
 import json
 
 from werkzeug.security import (
@@ -35,8 +34,11 @@ app = Flask(__name__)
 
 app.secret_key = "smarttraffic_fresh_secret_key"
 
+
 # Keep users logged in for 30 days
-app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30
+app.config["PERMANENT_SESSION_LIFETIME"] = (
+    60 * 60 * 24 * 30
+)
 
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 
@@ -69,7 +71,7 @@ def create_database():
 
 
     # ==================================================
-    # USERS
+    # USERS TABLE
     # ==================================================
 
     cursor.execute("""
@@ -88,7 +90,7 @@ def create_database():
 
 
     # ==================================================
-    # FIREBASE TOKENS
+    # FIREBASE TOKENS TABLE
     # ==================================================
 
     cursor.execute("""
@@ -310,29 +312,10 @@ traffic_data = {
 # NOTIFICATION CONTROL
 # ==================================================
 
-candidate_status = ""
-
-candidate_start_time = 0
+# The last traffic status for which a notification
+# was successfully sent.
 
 last_notified_status = ""
-
-last_notification_time = 0
-
-
-# ==================================================
-# SETTINGS
-# ==================================================
-
-# Traffic must remain unchanged for this period
-# before NORMAL/MODERATE is considered confirmed.
-
-CONFIRMATION_TIME = 2
-
-
-# Small protection against duplicate notifications.
-# This is NOT a global 60-second lock.
-
-NOTIFICATION_COOLDOWN = 10
 
 
 # ==================================================
@@ -359,9 +342,6 @@ def firebase_messaging_sw():
 
 @app.route("/")
 def home():
-
-    # If already logged in,
-    # open dashboard directly.
 
     if "user_id" in session:
 
@@ -408,8 +388,11 @@ def register():
         if not name or not email or not password:
 
             return render_template(
+
                 "register.html",
+
                 error="Please fill in all fields."
+
             )
 
 
@@ -534,8 +517,6 @@ def login():
 
         ):
 
-            # Make login session persistent
-
             session.permanent = True
 
 
@@ -629,7 +610,7 @@ def traffic():
 
 
 # ==================================================
-# SEND NOTIFICATION TO ALL DEVICES
+# SEND TRAFFIC NOTIFICATION
 # ==================================================
 
 def send_traffic_notification(
@@ -681,6 +662,12 @@ def send_traffic_notification(
     sent_count = 0
 
 
+    print(
+        f"📱 Firebase devices found: "
+        f"{len(rows)}"
+    )
+
+
     for row in rows:
 
         token = row["token"]
@@ -694,7 +681,8 @@ def send_traffic_notification(
 
                 body=(
 
-                    f"Traffic is {traffic_status}. "
+                    f"Traffic is "
+                    f"{traffic_status}. "
 
                     f"Vehicles detected: "
                     f"{vehicle_count}"
@@ -748,13 +736,7 @@ def update_traffic():
 
     global traffic_data
 
-    global candidate_status
-
-    global candidate_start_time
-
     global last_notified_status
-
-    global last_notification_time
 
 
     data = request.get_json(
@@ -830,7 +812,20 @@ def update_traffic():
 
 
     # ==================================================
-    # UPDATE DASHBOARD IMMEDIATELY
+    # GET PREVIOUS STATUS
+    # ==================================================
+
+    previous_status = traffic_data.get(
+
+        "traffic_status",
+
+        "NORMAL"
+
+    )
+
+
+    # ==================================================
+    # UPDATE DASHBOARD
     # ==================================================
 
     traffic_data["vehicle_count"] = (
@@ -843,88 +838,20 @@ def update_traffic():
 
 
     print(
+        "--------------------------------------"
+    )
 
+    print(
         f"Traffic: {traffic_status} | "
         f"Vehicles: {vehicle_count}"
-
     )
 
 
-    current_time = time.time()
-
-
     # ==================================================
-    # HEAVY TRAFFIC
+    # NO STATUS CHANGE
     # ==================================================
 
-    if traffic_status == "HEAVY":
-
-        # Heavy is sent immediately when
-        # status changes into HEAVY.
-
-        if last_notified_status != "HEAVY":
-
-            print(
-                "======================================"
-            )
-
-            print(
-                "🚨 HEAVY TRAFFIC DETECTED"
-            )
-
-            print(
-                "🚨 HEAVY notification"
-            )
-
-            print(
-                "======================================"
-            )
-
-
-            sent_count = (
-                send_traffic_notification(
-
-                    traffic_status,
-
-                    vehicle_count
-
-                )
-            )
-
-
-            if sent_count > 0:
-
-                last_notified_status = (
-                    "HEAVY"
-                )
-
-                last_notification_time = (
-                    current_time
-                )
-
-                candidate_status = ""
-
-                candidate_start_time = 0
-
-
-                return jsonify({
-
-                    "success": True,
-
-                    "vehicle_count":
-                        vehicle_count,
-
-                    "traffic_status":
-                        traffic_status,
-
-                    "notification":
-                        "HEAVY sent",
-
-                    "notification_sent":
-                        sent_count
-
-                })
-
+    if traffic_status == previous_status:
 
         return jsonify({
 
@@ -936,68 +863,45 @@ def update_traffic():
             "traffic_status":
                 traffic_status,
 
+            "previous_status":
+                previous_status,
+
             "notification":
-                "HEAVY already notified"
+                "no status change",
+
+            "notification_sent":
+                0
 
         })
 
 
     # ==================================================
-    # SAME STATUS ALREADY NOTIFIED
+    # STATUS CHANGED
+    # ==================================================
+
+    print(
+        "🚦 TRAFFIC STATUS CHANGED"
+    )
+
+    print(
+        f"Previous: {previous_status}"
+    )
+
+    print(
+        f"Current:  {traffic_status}"
+    )
+
+
+    # ==================================================
+    # PREVENT DUPLICATE NOTIFICATION
     # ==================================================
 
     if traffic_status == last_notified_status:
 
-        candidate_status = ""
-
-        candidate_start_time = 0
-
-
-        return jsonify({
-
-            "success": True,
-
-            "vehicle_count":
-                vehicle_count,
-
-            "traffic_status":
-                traffic_status,
-
-            "notification":
-                "not needed"
-
-        })
-
-
-    # ==================================================
-    # NEW STATUS
-    # ==================================================
-
-    if traffic_status != candidate_status:
-
-        candidate_status = (
-            traffic_status
-        )
-
-        candidate_start_time = (
-            current_time
-        )
-
-
         print(
-
-            f"⏳ {traffic_status} detected."
-
+            "ℹ️ This status was already notified."
         )
 
-        print(
-
-            f"Waiting {CONFIRMATION_TIME} "
-            f"seconds..."
-
-        )
-
-
         return jsonify({
 
             "success": True,
@@ -1008,90 +912,20 @@ def update_traffic():
             "traffic_status":
                 traffic_status,
 
+            "previous_status":
+                previous_status,
+
             "notification":
-                "waiting for confirmation"
+                "already notified",
+
+            "notification_sent":
+                0
 
         })
 
 
     # ==================================================
-    # CONFIRMATION
-    # ==================================================
-
-    elapsed = (
-
-        current_time
-        -
-        candidate_start_time
-
-    )
-
-
-    if elapsed < CONFIRMATION_TIME:
-
-        return jsonify({
-
-            "success": True,
-
-            "vehicle_count":
-                vehicle_count,
-
-            "traffic_status":
-                traffic_status,
-
-            "notification":
-                "waiting for confirmation"
-
-        })
-
-
-    # ==================================================
-    # SMALL DUPLICATE PROTECTION
-    # ==================================================
-
-    cooldown_elapsed = (
-
-        current_time
-        -
-        last_notification_time
-
-    )
-
-
-    # Only block if the status is the same
-    # as the previous notification.
-    #
-    # A genuine status change is allowed through.
-
-    if (
-
-        last_notified_status == traffic_status
-
-        and
-
-        cooldown_elapsed <
-        NOTIFICATION_COOLDOWN
-
-    ):
-
-        return jsonify({
-
-            "success": True,
-
-            "vehicle_count":
-                vehicle_count,
-
-            "traffic_status":
-                traffic_status,
-
-            "notification":
-                "cooldown"
-
-        })
-
-
-    # ==================================================
-    # SEND NORMAL / MODERATE
+    # SEND NOTIFICATION
     # ==================================================
 
     print(
@@ -1103,13 +937,11 @@ def update_traffic():
     )
 
     print(
-        "Status:",
-        traffic_status
+        f"Status: {traffic_status}"
     )
 
     print(
-        "Vehicles:",
-        vehicle_count
+        f"Vehicles: {vehicle_count}"
     )
 
     print(
@@ -1117,19 +949,17 @@ def update_traffic():
     )
 
 
-    sent_count = (
-        send_traffic_notification(
+    sent_count = send_traffic_notification(
 
-            traffic_status,
+        traffic_status,
 
-            vehicle_count
+        vehicle_count
 
-        )
     )
 
 
     # ==================================================
-    # RECORD SUCCESSFUL NOTIFICATION
+    # SAVE NOTIFICATION STATUS
     # ==================================================
 
     if sent_count > 0:
@@ -1138,22 +968,21 @@ def update_traffic():
             traffic_status
         )
 
-        last_notification_time = (
-            current_time
-        )
-
-        candidate_status = ""
-
-        candidate_start_time = 0
-
-
         print(
-
             f"✅ Notification sent to "
             f"{sent_count} device(s)."
-
         )
 
+    else:
+
+        print(
+            "⚠️ Notification was not sent."
+        )
+
+
+    # ==================================================
+    # RETURN RESPONSE
+    # ==================================================
 
     return jsonify({
 
@@ -1164,6 +993,9 @@ def update_traffic():
 
         "traffic_status":
             traffic_status,
+
+        "previous_status":
+            previous_status,
 
         "notification_sent":
             sent_count
@@ -1239,12 +1071,6 @@ def firebase_token():
         cursor = connection.cursor()
 
 
-        # If this token already exists,
-        # update its user_id.
-        #
-        # If it is a new phone,
-        # create a new row.
-
         cursor.execute(
 
             """
@@ -1271,7 +1097,7 @@ def firebase_token():
 
 
         print(
-            "Firebase token saved successfully."
+            "✅ Firebase token saved successfully."
         )
 
 
@@ -1288,7 +1114,7 @@ def firebase_token():
     except Exception as error:
 
         print(
-            "Firebase token database error:"
+            "❌ Firebase token database error:"
         )
 
         print(error)
@@ -1354,9 +1180,7 @@ def test_firebase_notification():
             """,
 
             (
-
                 session["user_id"],
-
             )
 
         )
@@ -1391,10 +1215,8 @@ def test_firebase_notification():
                     title="🚦 Smart Traffic",
 
                     body=(
-
                         "Test notification from "
                         "Smart Traffic Fresh."
-
                     )
 
                 ),
@@ -1406,7 +1228,9 @@ def test_firebase_notification():
 
             try:
 
-                messaging.send(message)
+                messaging.send(
+                    message
+                )
 
                 sent_count += 1
 
@@ -1414,7 +1238,7 @@ def test_firebase_notification():
             except Exception as token_error:
 
                 print(
-                    "Firebase token error:"
+                    "❌ Firebase token error:"
                 )
 
                 print(token_error)
@@ -1447,7 +1271,7 @@ def test_firebase_notification():
     except Exception as error:
 
         print(
-            "Firebase notification error:"
+            "❌ Firebase notification error:"
         )
 
         print(error)
@@ -1515,11 +1339,8 @@ if __name__ == "__main__":
         port=int(
 
             os.environ.get(
-
                 "PORT",
-
                 5000
-
             )
 
         ),
