@@ -273,6 +273,12 @@ def firebase_messaging_sw():
 @app.route("/")
 def home():
 
+    if "user_id" in session:
+
+        return redirect(
+            url_for("dashboard")
+        )
+
     return render_template(
         "home.html"
     )
