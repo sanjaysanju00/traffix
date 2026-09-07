@@ -1,199 +1,87 @@
-from ultralytics import YOLO
 import cv2
-import serial
 import time
 import requests
-from collections import deque
+import serial
 import statistics
+import uuid
+
+from collections import deque
+from ultralytics import YOLO
 
 
 # ============================================================
-# SETTINGS
+# CONFIGURATION
 # ============================================================
 
 ARDUINO_PORT = "COM7"
 
 ARDUINO_BAUDRATE = 9600
 
-FLASK_URL = (
-    "https://smart-traffic-system-c36o.onrender.com"
-    "/update_traffic"
+SERVER_URL = (
+    "https://smart-traffic-system-c36o.onrender.com/update_traffic"
 )
 
+# Send traffic information to Render every 2 seconds.
+SERVER_UPDATE_INTERVAL = 2.0
 
-# Send data to Render once every second
-SERVER_UPDATE_INTERVAL = 1.0
-
-
-# Number of frames used for vehicle-count smoothing
+# Number of camera frames used for vehicle-count smoothing.
 SMOOTHING_FRAMES = 7
 
-
-# A new status must be detected in this many
-# consecutive server-update cycles before changing.
+# Number of consecutive calculated statuses required
+# before accepting a new traffic status.
 STATUS_CONFIRMATION_COUNT = 3
 
+# YOLO confidence.
+YOLO_CONFIDENCE = 0.35
 
-# ============================================================
-# CONNECT TO ARDUINO
-# ============================================================
-
-try:
-
-    arduino = serial.Serial(
-
-        ARDUINO_PORT,
-
-        ARDUINO_BAUDRATE,
-
-        timeout=1
-
-    )
-
-    time.sleep(2)
-
-
-    print(
-        "=========================================="
-    )
-
-    print(
-        f"✅ Arduino connected: {ARDUINO_PORT}"
-    )
-
-    print(
-        "=========================================="
-    )
-
-
-except Exception as error:
-
-    print(
-        "❌ Arduino connection failed:"
-    )
-
-    print(error)
-
-    exit()
-
-
-# ============================================================
-# LOAD YOLO
-# ============================================================
-
-print(
-    "Loading YOLO model..."
-)
-
-
-model = YOLO(
-    "yolo11n.pt"
-)
-
-
-print(
-    "✅ YOLO model loaded"
-)
-
-
-# ============================================================
-# OPEN CAMERA
-# ============================================================
-
-camera = cv2.VideoCapture(
-    0
-)
-
-
-if not camera.isOpened():
-
-    print(
-        "❌ Camera could not be opened."
-    )
-
-    arduino.close()
-
-    exit()
-
-
-print(
-    "✅ Camera started"
-)
+# Camera.
+CAMERA_INDEX = 0
 
 
 # ============================================================
 # VEHICLE CLASSES
 # ============================================================
 
-vehicle_classes = {
+# COCO classes:
+#
+# 2  = car
+# 3  = motorcycle
+# 5  = bus
+# 7  = truck
 
-    2: "car",
-
-    3: "motorcycle",
-
-    5: "bus",
-
-    7: "truck"
-
+VEHICLE_CLASSES = {
+    2,
+    3,
+    5,
+    7
 }
 
 
 # ============================================================
-# VEHICLE COUNT SMOOTHING
+# TRAFFIC STATUS
 # ============================================================
 
-recent_counts = deque(
+def calculate_status(vehicle_count):
 
-    maxlen=SMOOTHING_FRAMES
-
-)
-
-
-# ============================================================
-# TRAFFIC STATUS CONTROL
-# ============================================================
-
-confirmed_status = "NORMAL"
-
-candidate_status = "NORMAL"
-
-candidate_count = 0
-
-
-# ============================================================
-# ARDUINO CONTROL
-# ============================================================
-
-last_arduino_status = ""
-
-
-# ============================================================
-# RENDER CONTROL
-# ============================================================
-
-last_server_update = 0
-
-last_render_status = ""
-
-last_render_count = -1
-
-
-# ============================================================
-# FUNCTION:
-# DETERMINE TRAFFIC STATUS
-# ============================================================
-
-def get_traffic_status(
-    vehicle_count
-):
+    # --------------------------------------------------------
+    # NORMAL
+    # --------------------------------------------------------
 
     if vehicle_count <= 3:
 
         return "NORMAL"
 
+    # --------------------------------------------------------
+    # MODERATE
+    # --------------------------------------------------------
+
     elif vehicle_count <= 6:
 
         return "MODERATE"
+
+    # --------------------------------------------------------
+    # HEAVY
+    # --------------------------------------------------------
 
     else:
 
@@ -201,128 +89,178 @@ def get_traffic_status(
 
 
 # ============================================================
-# FUNCTION:
-# CONFIRM TRAFFIC STATUS
+# ARDUINO
 # ============================================================
 
-def update_confirmed_status(
-    new_status
-):
-
-    global confirmed_status
-
-    global candidate_status
-
-    global candidate_count
+arduino = None
 
 
-    # --------------------------------------------------------
-    # Already confirmed
-    # --------------------------------------------------------
+try:
 
-    if new_status == confirmed_status:
+    arduino = serial.Serial(
+        ARDUINO_PORT,
+        ARDUINO_BAUDRATE,
+        timeout=1
+    )
 
-        candidate_status = (
-            new_status
-        )
+    time.sleep(2)
 
-        candidate_count = 0
+    print("==========================================")
+    print(
+        f"✅ Arduino connected: {ARDUINO_PORT}"
+    )
+    print("==========================================")
 
-        return confirmed_status
+except Exception as e:
 
+    print("==========================================")
+    print("⚠️ Arduino connection failed")
+    print(
+        f"   {e}"
+    )
+    print("==========================================")
 
-    # --------------------------------------------------------
-    # New candidate status
-    # --------------------------------------------------------
-
-    if new_status != candidate_status:
-
-        candidate_status = (
-            new_status
-        )
-
-        candidate_count = 1
-
-
-    else:
-
-        candidate_count += 1
-
-
-    # --------------------------------------------------------
-    # Confirm after consecutive detections
-    # --------------------------------------------------------
-
-    if (
-        candidate_count
-        >= STATUS_CONFIRMATION_COUNT
-    ):
-
-        confirmed_status = (
-            candidate_status
-        )
-
-        candidate_count = 0
-
-
-        print(
-            "=========================================="
-        )
-
-        print(
-            f"✅ CONFIRMED STATUS: "
-            f"{confirmed_status}"
-        )
-
-        print(
-            "=========================================="
-        )
-
-
-    return confirmed_status
+    arduino = None
 
 
 # ============================================================
-# START
+# SEND STATUS TO ARDUINO
+# ============================================================
+
+def send_to_arduino(status):
+
+    if arduino is None:
+
+        return
+
+    try:
+
+        arduino.write(
+            (status + "\n").encode()
+        )
+
+        print(
+            f"🔴 Arduino: {status}"
+        )
+
+    except Exception as e:
+
+        print(
+            "⚠️ Arduino send error:",
+            e
+        )
+
+
+# ============================================================
+# LOAD YOLO
+# ============================================================
+
+print("Loading YOLO model...")
+
+model = YOLO(
+    "yolo11n.pt"
+)
+
+print("✅ YOLO model loaded")
+
+
+# ============================================================
+# START CAMERA
+# ============================================================
+
+camera = cv2.VideoCapture(
+    CAMERA_INDEX
+)
+
+if not camera.isOpened():
+
+    print(
+        "❌ Camera could not be opened."
+    )
+
+    if arduino:
+
+        arduino.close()
+
+    raise SystemExit
+
+
+print("✅ Camera started")
+
+
+# ============================================================
+# UNIQUE DETECTOR SESSION
+#
+# Every time this program starts, a new source_id is created.
+# This lets Render recognize that sequence numbers belong to
+# this particular detector session.
+# ============================================================
+
+SOURCE_ID = str(
+    uuid.uuid4()
+)
+
+sequence = 0
+
+
+# ============================================================
+# VARIABLES
+# ============================================================
+
+count_history = deque(
+    maxlen=SMOOTHING_FRAMES
+)
+
+confirmed_status = "NORMAL"
+
+candidate_status = None
+
+candidate_count = 0
+
+last_server_update = 0
+
+last_sent_status = None
+
+last_sent_vehicle_count = None
+
+
+# ============================================================
+# START MESSAGE
 # ============================================================
 
 print("")
-
-print(
-    "=========================================="
-)
-
-print(
-    "🚦 SMART TRAFFIC DETECTION STARTED"
-)
-
-print(
-    "=========================================="
-)
-
+print("==========================================")
+print("🚦 SMART TRAFFIC DETECTION STARTED")
+print("==========================================")
 print("")
-
 print(
-    f"Count smoothing: "
-    f"{SMOOTHING_FRAMES} frames"
+    f"Count smoothing: {SMOOTHING_FRAMES} frames"
 )
-
 print(
     f"Status confirmation: "
     f"{STATUS_CONFIRMATION_COUNT} cycles"
 )
-
 print(
-    "Render update: every 1 second"
+    f"Render update: every "
+    f"{SERVER_UPDATE_INTERVAL} seconds"
 )
-
+print("")
+print(
+    "Notifications are sent ONLY when the "
+    "confirmed status changes."
+)
+print("")
+print("Press Q to stop.")
 print("")
 
-print(
-    "Press Q to stop."
-)
 
-print("")
+# ============================================================
+# INITIAL ARDUINO STATUS
+# ============================================================
+
+send_to_arduino(
+    "NORMAL"
+)
 
 
 # ============================================================
@@ -333,41 +271,33 @@ try:
 
     while True:
 
-        # ====================================================
-        # READ CAMERA
-        # ====================================================
-
         success, frame = camera.read()
-
 
         if not success:
 
             print(
-                "❌ Camera frame could not be read."
+                "⚠️ Camera frame could not be read."
             )
 
-            break
+            time.sleep(0.1)
 
+            continue
 
-        # ====================================================
+        # ----------------------------------------------------
         # YOLO DETECTION
-        # ====================================================
+        # ----------------------------------------------------
 
         results = model(
-
             frame,
-
+            conf=YOLO_CONFIDENCE,
             verbose=False
-
         )
-
-
-        # ====================================================
-        # COUNT VEHICLES
-        # ====================================================
 
         raw_vehicle_count = 0
 
+        # ----------------------------------------------------
+        # Count vehicles
+        # ----------------------------------------------------
 
         for result in results:
 
@@ -375,336 +305,252 @@ try:
 
                 continue
 
-
             for box in result.boxes:
 
                 class_id = int(
                     box.cls[0]
                 )
 
-
-                if class_id in vehicle_classes:
+                if class_id in VEHICLE_CLASSES:
 
                     raw_vehicle_count += 1
 
+        # ----------------------------------------------------
+        # Add raw count to smoothing history
+        # ----------------------------------------------------
 
-        # ====================================================
-        # STORE COUNT
-        # ====================================================
-
-        recent_counts.append(
-
+        count_history.append(
             raw_vehicle_count
-
         )
 
+        # ----------------------------------------------------
+        # Median smoothing
+        # ----------------------------------------------------
 
-        # ====================================================
-        # SMOOTH COUNT
-        # ====================================================
+        if len(count_history) > 0:
 
-        smoothed_vehicle_count = int(
-
-            statistics.median(
-                recent_counts
+            smoothed_count = int(
+                round(
+                    statistics.median(
+                        count_history
+                    )
+                )
             )
 
+        else:
+
+            smoothed_count = 0
+
+        # ----------------------------------------------------
+        # Calculate candidate status
+        # ----------------------------------------------------
+
+        calculated_status = calculate_status(
+            smoothed_count
         )
 
+        # ----------------------------------------------------
+        # STATUS CONFIRMATION
+        #
+        # A new status must appear 3 consecutive
+        # processing cycles before becoming confirmed.
+        # ----------------------------------------------------
 
-        # ====================================================
-        # DETECT STATUS
-        # ====================================================
+        if calculated_status == confirmed_status:
 
-        detected_status = (
+            candidate_status = None
 
-            get_traffic_status(
+            candidate_count = 0
 
-                smoothed_vehicle_count
+        else:
 
-            )
+            if calculated_status == candidate_status:
 
-        )
+                candidate_count += 1
 
+            else:
 
-        # ====================================================
-        # CONFIRM STATUS
-        # ====================================================
+                candidate_status = calculated_status
 
-        traffic_status = (
+                candidate_count = 1
 
-            update_confirmed_status(
+            # ------------------------------------------------
+            # Confirm new status
+            # ------------------------------------------------
 
-                detected_status
+            if candidate_count >= STATUS_CONFIRMATION_COUNT:
 
-            )
-
-        )
-
-
-        # ====================================================
-        # SEND TO ARDUINO
-        # ====================================================
-
-        if (
-            traffic_status
-            != last_arduino_status
-        ):
-
-            try:
-
-                arduino.write(
-
-                    (
-                        traffic_status
-                        + "\n"
-                    ).encode()
-
+                confirmed_status = (
+                    calculated_status
                 )
 
+                candidate_status = None
+
+                candidate_count = 0
+
+                print("")
+                print(
+                    "=========================================="
+                )
 
                 print(
-
-                    f"🔴 Arduino: "
-                    f"{traffic_status}"
-
+                    f"✅ CONFIRMED STATUS: "
+                    f"{confirmed_status}"
                 )
-
-
-                last_arduino_status = (
-
-                    traffic_status
-
-                )
-
-
-            except Exception as error:
 
                 print(
-                    "❌ Arduino send error:"
+                    "=========================================="
                 )
 
-                print(error)
+                # --------------------------------------------
+                # Arduino changes immediately
+                # --------------------------------------------
 
+                send_to_arduino(
+                    confirmed_status
+                )
 
-        # ====================================================
+        # ----------------------------------------------------
         # SEND TO RENDER
-        # ====================================================
+        #
+        # Only one request can be active at a time because
+        # requests.post() completes before the loop continues.
+        #
+        # This prevents a pile-up of overlapping requests.
+        # ----------------------------------------------------
 
         current_time = time.time()
 
-
         if (
-
-            current_time
-            -
-            last_server_update
-
-            >=
-
-            SERVER_UPDATE_INTERVAL
-
+            current_time - last_server_update
+            >= SERVER_UPDATE_INTERVAL
         ):
 
-            last_server_update = (
-                current_time
-            )
+            sequence += 1
 
+            payload = {
+
+                "vehicle_count":
+                    smoothed_count,
+
+                "traffic_status":
+                    confirmed_status,
+
+                "source_id":
+                    SOURCE_ID,
+
+                "sequence":
+                    sequence
+            }
 
             try:
 
                 response = requests.post(
 
-                    FLASK_URL,
+                    SERVER_URL,
 
-                    json={
+                    json=payload,
 
-                        "vehicle_count":
-                            smoothed_vehicle_count,
-
-                        "traffic_status":
-                            traffic_status
-
-                    },
-
-                    timeout=5
-
+                    timeout=8
                 )
 
+                last_server_update = (
+                    time.time()
+                )
 
-                # --------------------------------------------
-                # Print status when something changes
-                # --------------------------------------------
+                # ------------------------------------------------
+                # Server response
+                # ------------------------------------------------
 
-                if (
+                if response.ok:
 
-                    traffic_status
-                    != last_render_status
+                    try:
 
-                    or
+                        response_data = (
+                            response.json()
+                        )
 
-                    smoothed_vehicle_count
-                    != last_render_count
+                    except Exception:
 
-                ):
+                        response_data = {}
+
+                    ignored = response_data.get(
+                        "ignored",
+                        False
+                    )
+
+                    if ignored:
+
+                        print(
+                            f"⏭️ Render ignored old "
+                            f"request #{sequence}"
+                        )
+
+                    else:
+
+                        print(
+                            f"🌐 Render: "
+                            f"{confirmed_status} | "
+                            f"Vehicles: "
+                            f"{smoothed_count}"
+                        )
+
+                else:
 
                     print(
-
-                        f"🌐 Render: "
-                        f"{traffic_status} "
-                        f"| Vehicles: "
-                        f"{smoothed_vehicle_count}"
-
+                        f"⚠️ Render returned "
+                        f"HTTP {response.status_code}"
                     )
-
-
-                    last_render_status = (
-
-                        traffic_status
-
-                    )
-
-                    last_render_count = (
-
-                        smoothed_vehicle_count
-
-                    )
-
-
-                # --------------------------------------------
-                # HTTP ERROR
-                # --------------------------------------------
-
-                if (
-                    response.status_code
-                    != 200
-                ):
-
-                    print(
-
-                        f"⚠️ Render HTTP "
-                        f"{response.status_code}"
-
-                    )
-
 
             except requests.exceptions.Timeout:
+
+                last_server_update = (
+                    time.time()
+                )
 
                 print(
                     "⚠️ Render request timed out."
                 )
 
+            except requests.exceptions.RequestException as e:
 
-            except requests.exceptions.RequestException as error:
+                last_server_update = (
+                    time.time()
+                )
 
                 print(
-                    "❌ Render connection error:"
+                    "⚠️ Render request failed:",
+                    e
                 )
 
-                print(error)
+            except Exception as e:
 
-
-            except Exception as error:
+                last_server_update = (
+                    time.time()
+                )
 
                 print(
-                    "❌ Server update error:"
+                    "⚠️ Unexpected Render error:",
+                    e
                 )
 
-                print(error)
+        # ----------------------------------------------------
+        # DISPLAY INFORMATION ON CAMERA
+        # ----------------------------------------------------
 
+        display_text = (
+            f"Vehicles: {smoothed_count}"
+        )
 
-        # ====================================================
-        # DRAW YOLO BOXES
-        # ====================================================
-
-        display_frame = frame.copy()
-
-
-        for result in results:
-
-            if result.boxes is None:
-
-                continue
-
-
-            for box in result.boxes:
-
-                class_id = int(
-                    box.cls[0]
-                )
-
-
-                if class_id not in vehicle_classes:
-
-                    continue
-
-
-                confidence = float(
-                    box.conf[0]
-                )
-
-
-                x1, y1, x2, y2 = map(
-
-                    int,
-
-                    box.xyxy[0]
-
-                )
-
-
-                label = (
-
-                    f"{vehicle_classes[class_id]} "
-                    f"{confidence:.2f}"
-
-                )
-
-
-                cv2.rectangle(
-
-                    display_frame,
-
-                    (x1, y1),
-
-                    (x2, y2),
-
-                    (0, 255, 0),
-
-                    2
-
-                )
-
-
-                cv2.putText(
-
-                    display_frame,
-
-                    label,
-
-                    (x1, y1 - 10),
-
-                    cv2.FONT_HERSHEY_SIMPLEX,
-
-                    0.5,
-
-                    (0, 255, 0),
-
-                    2
-
-                )
-
-
-        # ====================================================
-        # DISPLAY VEHICLE COUNT
-        # ====================================================
+        status_text = (
+            f"Traffic: {confirmed_status}"
+        )
 
         cv2.putText(
 
-            display_frame,
+            frame,
 
-            f"Vehicles: "
-            f"{smoothed_vehicle_count}",
+            display_text,
 
             (20, 40),
 
@@ -712,23 +558,16 @@ try:
 
             1,
 
-            (255, 255, 255),
+            (0, 255, 0),
 
             2
-
         )
-
-
-        # ====================================================
-        # DISPLAY TRAFFIC STATUS
-        # ====================================================
 
         cv2.putText(
 
-            display_frame,
+            frame,
 
-            f"Traffic: "
-            f"{traffic_status}",
+            status_text,
 
             (20, 80),
 
@@ -736,90 +575,29 @@ try:
 
             1,
 
-            (255, 255, 255),
+            (0, 255, 255),
 
             2
-
         )
 
-
-        # ====================================================
-        # DISPLAY RAW COUNT
-        # ====================================================
-
-        cv2.putText(
-
-            display_frame,
-
-            f"Raw: "
-            f"{raw_vehicle_count}",
-
-            (20, 120),
-
-            cv2.FONT_HERSHEY_SIMPLEX,
-
-            0.7,
-
-            (255, 255, 255),
-
-            2
-
-        )
-
-
-        # ====================================================
-        # DISPLAY STATUS BEING CHECKED
-        # ====================================================
-
-        if (
-            candidate_status
-            != confirmed_status
-        ):
-
-            cv2.putText(
-
-                display_frame,
-
-                f"Checking: "
-                f"{candidate_status}",
-
-                (20, 155),
-
-                cv2.FONT_HERSHEY_SIMPLEX,
-
-                0.65,
-
-                (255, 255, 255),
-
-                2
-
-            )
-
-
-        # ====================================================
-        # SHOW CAMERA
-        # ====================================================
+        # ----------------------------------------------------
+        # SHOW FRAME
+        # ----------------------------------------------------
 
         cv2.imshow(
-
             "Smart Traffic Detection",
-
-            display_frame
-
+            frame
         )
 
-
-        # ====================================================
-        # PRESS Q TO EXIT
-        # ====================================================
+        # ----------------------------------------------------
+        # Q TO EXIT
+        # ----------------------------------------------------
 
         key = cv2.waitKey(1) & 0xFF
-
 
         if key == ord("q"):
 
             print("")
-
             print(
                 "🛑 Q pressed. Stopping..."
             )
@@ -831,32 +609,33 @@ try:
 # CLEANUP
 # ============================================================
 
+except KeyboardInterrupt:
+
+    print("")
+    print(
+        "🛑 Program interrupted."
+    )
+
+
 finally:
 
     camera.release()
 
     cv2.destroyAllWindows()
 
+    if arduino is not None:
 
-    try:
+        try:
 
-        arduino.close()
+            arduino.close()
 
-    except Exception:
+        except Exception:
 
-        pass
-
+            pass
 
     print("")
-
-    print(
-        "=========================================="
-    )
-
+    print("==========================================")
     print(
         "✅ Smart Traffic Detection stopped"
     )
-
-    print(
-        "=========================================="
-    )
+    print("==========================================")
