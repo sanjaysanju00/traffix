@@ -1,32 +1,978 @@
-<!DOCTYPE html>
+# dashboard.html
 
+```html
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
 
     <meta charset="UTF-8">
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
 
-    <link
-        rel="manifest"
-        href="{{ url_for('static', filename='manifest.json') }}"
-    >
-
-    <meta
-        name="theme-color"
-        content="#0d6efd"
-    >
+    <meta name="theme-color"
+          content="#0d6efd">
 
     <title>Smart Traffic Dashboard</title>
 
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', filename='style.css') }}"
-    >
+
+    <!-- ============================= -->
+    <!-- FIREBASE SDK -->
+    <!-- ============================= -->
+
+    <script type="module">
+
+        import {
+            initializeApp
+        } from
+        "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+
+        import {
+            getMessaging,
+            getToken,
+            onMessage,
+            isSupported
+        } from
+        "https://www.gstatic.com/firebasejs/12.1.0/firebase-messaging.js";
+
+
+        // ==========================================
+        // FIREBASE CONFIGURATION
+        // ==========================================
+
+        const firebaseConfig = {
+
+            apiKey:
+                "AIzaSyCEDu7nwRBQ0G_mdX09JoJj4AW4d5pAr5U",
+
+            authDomain:
+                "projectsanjaysie.firebaseapp.com",
+
+            projectId:
+                "projectsanjaysie",
+
+            storageBucket:
+                "projectsanjaysie.firebasestorage.app",
+
+            messagingSenderId:
+                "8747423858",
+
+            appId:
+                "1:8747423858:web:49846d0d440b069a014aeb"
+        };
+
+
+        // ==========================================
+        // VAPID PUBLIC KEY
+        // ==========================================
+
+        const VAPID_PUBLIC_KEY =
+            "BEmOwxz_GZMQPsFJqFDxq2AgI7d6PF6f7YY3qOd-9hVQkKWG6NcDWLE6xZV47H32G1O51f00uqPZz3yBX-2NJ0I";
+
+
+        // ==========================================
+        // INITIALIZE FIREBASE
+        // ==========================================
+
+        const firebaseApp =
+            initializeApp(firebaseConfig);
+
+
+        // ==========================================
+        // FIREBASE NOTIFICATION SETUP
+        // ==========================================
+
+        async function setupFirebaseNotifications() {
+
+            try {
+
+                const supported =
+                    await isSupported();
+
+                if (!supported) {
+
+                    console.log(
+                        "Firebase Messaging is not supported on this browser."
+                    );
+
+                    return;
+                }
+
+
+                // ------------------------------------------
+                // CHECK NOTIFICATION PERMISSION
+                // ------------------------------------------
+
+                if (
+                    Notification.permission ===
+                    "denied"
+                ) {
+
+                    console.log(
+                        "Notification permission is blocked."
+                    );
+
+                    return;
+                }
+
+
+                // ------------------------------------------
+                // REQUEST PERMISSION
+                // ------------------------------------------
+
+                let permission =
+                    Notification.permission;
+
+
+                if (permission !== "granted") {
+
+                    permission =
+                        await Notification.requestPermission();
+                }
+
+
+                if (permission !== "granted") {
+
+                    console.log(
+                        "Notification permission was not granted."
+                    );
+
+                    return;
+                }
+
+
+                // ------------------------------------------
+                // REGISTER SERVICE WORKER
+                // ------------------------------------------
+
+                const registration =
+                    await navigator.serviceWorker.register(
+                        "/firebase-messaging-sw.js"
+                    );
+
+                console.log(
+                    "Firebase service worker registered:",
+                    registration
+                );
+
+
+                // ------------------------------------------
+                // GET FIREBASE MESSAGING
+                // ------------------------------------------
+
+                const messaging =
+                    getMessaging(firebaseApp);
+
+
+                // ------------------------------------------
+                // GET FCM TOKEN
+                // ------------------------------------------
+
+                const token =
+                    await getToken(
+                        messaging,
+                        {
+                            vapidKey:
+                                VAPID_PUBLIC_KEY,
+
+                            serviceWorkerRegistration:
+                                registration
+                        }
+                    );
+
+
+                if (!token) {
+
+                    console.log(
+                        "Firebase token was not generated."
+                    );
+
+                    return;
+                }
+
+
+                console.log(
+                    "Firebase token obtained."
+                );
+
+
+                // ------------------------------------------
+                // SEND TOKEN TO FLASK SERVER
+                // ------------------------------------------
+
+                const response =
+                    await fetch(
+                        "/firebase-token",
+                        {
+
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body:
+                                JSON.stringify({
+                                    token: token
+                                })
+                        }
+                    );
+
+
+                const result =
+                    await response.json();
+
+                console.log(
+                    "Firebase token registration:",
+                    result
+                );
+
+
+                // ------------------------------------------
+                // FOREGROUND MESSAGE LISTENER
+                // ------------------------------------------
+
+                onMessage(
+                    messaging,
+                    function(payload) {
+
+                        console.log(
+                            "Foreground Firebase message:",
+                            payload
+                        );
+
+
+                        const notificationTitle =
+                            payload.notification?.title
+                            ||
+                            payload.data?.title
+                            ||
+                            "🚦 Smart Traffic Alert";
+
+
+                        const notificationBody =
+                            payload.notification?.body
+                            ||
+                            payload.data?.body
+                            ||
+                            "Traffic alert received.";
+
+
+                        // --------------------------------------
+                        // SHOW BROWSER NOTIFICATION
+                        // --------------------------------------
+
+                        if (
+                            Notification.permission ===
+                            "granted"
+                        ) {
+
+                            try {
+
+                                new Notification(
+                                    notificationTitle,
+                                    {
+
+                                        body:
+                                            notificationBody,
+
+                                        icon:
+                                            "/static/icon.png",
+
+                                        badge:
+                                            "/static/icon.png"
+                                    }
+                                );
+
+                            }
+
+                            catch (notificationError) {
+
+                                console.log(
+                                    "Browser notification error:",
+                                    notificationError
+                                );
+                            }
+                        }
+
+
+                        // --------------------------------------
+                        // SHOW DASHBOARD ALERT
+                        // --------------------------------------
+
+                        showTrafficPopup(
+                            notificationTitle,
+                            notificationBody
+                        );
+
+
+                        // --------------------------------------
+                        // UPDATE TRAFFIC DATA
+                        // --------------------------------------
+
+                        loadTraffic();
+                    }
+                );
+
+
+                console.log(
+                    "Firebase foreground listener enabled."
+                );
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Firebase notification setup error:",
+                    error
+                );
+            }
+        }
+
+
+        // ==========================================
+        // TRAFFIC POPUP
+        // ==========================================
+
+        function showTrafficPopup(
+            title,
+            message
+        ) {
+
+            const popup =
+                document.getElementById(
+                    "trafficNotification"
+                );
+
+            const popupTitle =
+                document.getElementById(
+                    "notificationTitle"
+                );
+
+            const popupMessage =
+                document.getElementById(
+                    "notificationMessage"
+                );
+
+
+            if (!popup) {
+
+                return;
+            }
+
+
+            popupTitle.textContent =
+                title;
+
+            popupMessage.textContent =
+                message;
+
+
+            popup.classList.add(
+                "show"
+            );
+
+
+            setTimeout(
+                function() {
+
+                    popup.classList.remove(
+                        "show"
+                    );
+
+                },
+                6000
+            );
+        }
+
+
+        // ==========================================
+        // START FIREBASE SETUP
+        // ==========================================
+
+        window.addEventListener(
+            "load",
+            function() {
+
+                setupFirebaseNotifications();
+
+            }
+        );
+
+    </script>
+
+
+    <!-- ============================= -->
+    <!-- STYLES -->
+    <!-- ============================= -->
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+
+        body {
+
+            margin: 0;
+
+            font-family:
+                Arial,
+                Helvetica,
+                sans-serif;
+
+            background:
+                #f4f7fb;
+
+            color:
+                #222;
+        }
+
+
+        /* ============================= */
+        /* NAVBAR */
+        /* ============================= */
+
+        .navbar {
+
+            background:
+                #0d6efd;
+
+            color:
+                white;
+
+            padding:
+                15px 25px;
+
+            display:
+                flex;
+
+            justify-content:
+                space-between;
+
+            align-items:
+                center;
+
+            box-shadow:
+                0 2px 8px
+                rgba(0,0,0,0.15);
+        }
+
+
+        .navbar h2 {
+
+            margin: 0;
+
+            font-size:
+                22px;
+        }
+
+
+        .nav-links {
+
+            display:
+                flex;
+
+            gap:
+                10px;
+
+            align-items:
+                center;
+        }
+
+
+        .nav-links a {
+
+            color:
+                white;
+
+            text-decoration:
+                none;
+
+            padding:
+                8px 12px;
+
+            border-radius:
+                6px;
+
+            transition:
+                0.2s;
+        }
+
+
+        .nav-links a:hover {
+
+            background:
+                rgba(255,255,255,0.18);
+        }
+
+
+        /* ============================= */
+        /* CONTAINER */
+        /* ============================= */
+
+        .container {
+
+            width:
+                92%;
+
+            max-width:
+                1100px;
+
+            margin:
+                30px auto;
+        }
+
+
+        .welcome {
+
+            margin-bottom:
+                20px;
+        }
+
+
+        .welcome h1 {
+
+            margin-bottom:
+                5px;
+        }
+
+
+        .welcome p {
+
+            color:
+                #666;
+
+            margin-top:
+                0;
+        }
+
+
+        /* ============================= */
+        /* STATUS CARD */
+        /* ============================= */
+
+        .status-card {
+
+            background:
+                white;
+
+            border-radius:
+                15px;
+
+            padding:
+                30px;
+
+            box-shadow:
+                0 4px 15px
+                rgba(0,0,0,0.08);
+
+            text-align:
+                center;
+
+            margin-bottom:
+                25px;
+        }
+
+
+        .status-label {
+
+            color:
+                #777;
+
+            font-size:
+                15px;
+
+            margin-bottom:
+                8px;
+        }
+
+
+        #trafficStatus {
+
+            font-size:
+                36px;
+
+            font-weight:
+                bold;
+
+            margin:
+                5px 0;
+        }
+
+
+        #vehicleCount {
+
+            font-size:
+                20px;
+
+            color:
+                #555;
+
+            margin-top:
+                10px;
+        }
+
+
+        .normal {
+
+            color:
+                #198754;
+        }
+
+
+        .moderate {
+
+            color:
+                #fd7e14;
+        }
+
+
+        .heavy {
+
+            color:
+                #dc3545;
+        }
+
+
+        /* ============================= */
+        /* INFORMATION CARDS */
+        /* ============================= */
+
+        .cards {
+
+            display:
+                grid;
+
+            grid-template-columns:
+                repeat(
+                    auto-fit,
+                    minmax(
+                        220px,
+                        1fr
+                    )
+                );
+
+            gap:
+                20px;
+
+            margin-bottom:
+                25px;
+        }
+
+
+        .card {
+
+            background:
+                white;
+
+            padding:
+                25px;
+
+            border-radius:
+                12px;
+
+            box-shadow:
+                0 4px 12px
+                rgba(0,0,0,0.07);
+
+            text-align:
+                center;
+        }
+
+
+        .card h3 {
+
+            margin-top:
+                0;
+
+            color:
+                #555;
+        }
+
+
+        .card-value {
+
+            font-size:
+                30px;
+
+            font-weight:
+                bold;
+
+            margin-top:
+                10px;
+        }
+
+
+        /* ============================= */
+        /* MAP SECTION */
+        /* ============================= */
+
+        .map-card {
+
+            background:
+                white;
+
+            padding:
+                25px;
+
+            border-radius:
+                12px;
+
+            box-shadow:
+                0 4px 12px
+                rgba(0,0,0,0.07);
+
+            margin-bottom:
+                25px;
+        }
+
+
+        .map-card h2 {
+
+            margin-top:
+                0;
+        }
+
+
+        .destination-input {
+
+            width:
+                100%;
+
+            padding:
+                12px;
+
+            border:
+                1px solid #ccc;
+
+            border-radius:
+                7px;
+
+            font-size:
+                16px;
+
+            margin-bottom:
+                10px;
+        }
+
+
+        .map-button {
+
+            background:
+                #0d6efd;
+
+            color:
+                white;
+
+            border:
+                none;
+
+            padding:
+                12px 20px;
+
+            border-radius:
+                7px;
+
+            cursor:
+                pointer;
+
+            font-size:
+                15px;
+        }
+
+
+        .map-button:hover {
+
+            background:
+                #0b5ed7;
+        }
+
+
+        /* ============================= */
+        /* LOCATION */
+        /* ============================= */
+
+        .location-card {
+
+            background:
+                white;
+
+            padding:
+                25px;
+
+            border-radius:
+                12px;
+
+            box-shadow:
+                0 4px 12px
+                rgba(0,0,0,0.07);
+
+            margin-bottom:
+                25px;
+        }
+
+
+        #locationStatus {
+
+            color:
+                #666;
+        }
+
+
+        /* ============================= */
+        /* NOTIFICATION POPUP */
+        /* ============================= */
+
+        .notification-popup {
+
+            position:
+                fixed;
+
+            top:
+                20px;
+
+            right:
+                20px;
+
+            width:
+                350px;
+
+            max-width:
+                calc(100% - 40px);
+
+            background:
+                white;
+
+            border-radius:
+                12px;
+
+            box-shadow:
+                0 8px 30px
+                rgba(0,0,0,0.25);
+
+            padding:
+                18px;
+
+            z-index:
+                99999;
+
+            transform:
+                translateX(
+                    120%
+                );
+
+            opacity:
+                0;
+
+            transition:
+                all 0.35s ease;
+        }
+
+
+        .notification-popup.show {
+
+            transform:
+                translateX(0);
+
+            opacity:
+                1;
+        }
+
+
+        .notification-popup h3 {
+
+            margin:
+                0 0 8px 0;
+
+            color:
+                #0d6efd;
+
+            font-size:
+                17px;
+        }
+
+
+        .notification-popup p {
+
+            margin:
+                0;
+
+            color:
+                #444;
+
+            line-height:
+                1.5;
+        }
+
+
+        /* ============================= */
+        /* MOBILE */
+        /* ============================= */
+
+        @media (
+            max-width: 600px
+        ) {
+
+            .navbar {
+
+                padding:
+                    12px 15px;
+
+                flex-direction:
+                    column;
+
+                gap:
+                    10px;
+            }
+
+
+            .nav-links {
+
+                flex-wrap:
+                    wrap;
+
+                justify-content:
+                    center;
+            }
+
+
+            .container {
+
+                width:
+                    94%;
+
+                margin:
+                    20px auto;
+            }
+
+
+            #trafficStatus {
+
+                font-size:
+                    30px;
+            }
+
+
+            .notification-popup {
+
+                top:
+                    10px;
+
+                right:
+                    10px;
+
+                width:
+                    calc(100% - 20px);
+            }
+
+        }
+
+    </style>
 
 </head>
 
@@ -34,624 +980,668 @@
 <body>
 
 
-<div class="container">
+    <!-- ============================= -->
+    <!-- NAVBAR -->
+    <!-- ============================= -->
 
-
-    <h1>
-        🚦 Smart Traffic Dashboard
-    </h1>
-
-
-    <p>
-
-        Welcome,
-        <strong>{{ name }}</strong>
-
-    </p>
-
-
-    <div class="card">
+    <nav class="navbar">
 
         <h2>
-            🚗 Vehicles Detected
+            🚦 Smart Traffic
         </h2>
 
-        <div
-            id="vehicles"
-            class="value"
-        >
-            0
+
+        <div class="nav-links">
+
+            <a href="/">
+                Home
+            </a>
+
+            <a href="/dashboard">
+                Dashboard
+            </a>
+
+            <a href="/notifications">
+                Notifications
+            </a>
+
+            <a href="/logout">
+                Logout
+            </a>
+
         </div>
+
+    </nav>
+
+
+
+    <!-- ============================= -->
+    <!-- MAIN CONTAINER -->
+    <!-- ============================= -->
+
+    <div class="container">
+
+
+        <div class="welcome">
+
+            <h1>
+                Traffic Dashboard
+            </h1>
+
+            <p>
+                Real-time traffic monitoring
+            </p>
+
+        </div>
+
+
+
+        <!-- ============================= -->
+        <!-- CURRENT STATUS -->
+        <!-- ============================= -->
+
+        <div class="status-card">
+
+            <div class="status-label">
+                CURRENT TRAFFIC STATUS
+            </div>
+
+
+            <div
+                id="trafficStatus"
+                class="normal"
+            >
+                NORMAL
+            </div>
+
+
+            <div id="vehicleCount">
+                Vehicles: 0
+            </div>
+
+        </div>
+
+
+
+        <!-- ============================= -->
+        <!-- INFORMATION CARDS -->
+        <!-- ============================= -->
+
+        <div class="cards">
+
+
+            <div class="card">
+
+                <h3>
+                    🚗 Vehicles
+                </h3>
+
+                <div
+                    id="vehicleCard"
+                    class="card-value"
+                >
+                    0
+                </div>
+
+            </div>
+
+
+
+            <div class="card">
+
+                <h3>
+                    🚦 Traffic
+                </h3>
+
+                <div
+                    id="statusCard"
+                    class="card-value normal"
+                >
+                    NORMAL
+                </div>
+
+            </div>
+
+
+
+            <div class="card">
+
+                <h3>
+                    🔔 Notifications
+                </h3>
+
+                <div
+                    id="notificationStatus"
+                    class="card-value"
+                    style="font-size:18px;"
+                >
+                    Checking...
+                </div>
+
+            </div>
+
+        </div>
+
+
+
+        <!-- ============================= -->
+        <!-- LOCATION -->
+        <!-- ============================= -->
+
+        <div class="location-card">
+
+            <h2>
+                📍 Your Location
+            </h2>
+
+            <p id="locationStatus">
+                Location not detected yet.
+            </p>
+
+            <button
+                class="map-button"
+                onclick="getUserLocation()"
+            >
+                Detect My Location
+            </button>
+
+        </div>
+
+
+
+        <!-- ============================= -->
+        <!-- GOOGLE MAPS -->
+        <!-- ============================= -->
+
+        <div class="map-card">
+
+            <h2>
+                🗺️ Find Alternate Route
+            </h2>
+
+            <p>
+                Enter your destination to open Google Maps
+                and check available routes.
+            </p>
+
+
+            <input
+                type="text"
+                id="destination"
+                class="destination-input"
+                placeholder="Enter destination"
+            >
+
+
+            <button
+                class="map-button"
+                onclick="openGoogleMaps()"
+            >
+                Open Google Maps
+            </button>
+
+        </div>
+
 
     </div>
 
+
+
+    <!-- ============================= -->
+    <!-- TRAFFIC NOTIFICATION POPUP -->
+    <!-- ============================= -->
 
     <div
-        class="card normal"
-        id="trafficCard"
+        id="trafficNotification"
+        class="notification-popup"
     >
 
-        <h2>
-            🚦 Traffic Status
-        </h2>
+        <h3 id="notificationTitle">
+            🚦 Smart Traffic Alert
+        </h3>
 
-        <div
-            id="status"
-            class="value"
-        >
-            NORMAL
-        </div>
-
-        <p id="trafficAlert">
-            🟢 Traffic is normal.
+        <p id="notificationMessage">
+            Traffic alert received.
         </p>
 
     </div>
 
 
-    <div class="card">
 
-        <h2>
-            🟢 System Status
-        </h2>
+    <!-- ============================= -->
+    <!-- JAVASCRIPT -->
+    <!-- ============================= -->
 
-        <div class="value">
-            ONLINE
-        </div>
+    <script>
 
-    </div>
 
+        // ==========================================
+        // LOAD TRAFFIC FROM SERVER
+        // ==========================================
 
-    <div class="card">
+        async function loadTraffic() {
 
-        <h2>
-            📍 Current Location
-        </h2>
+            try {
 
+                const response =
+                    await fetch(
+                        "/traffic",
+                        {
+                            cache:
+                                "no-store"
+                        }
+                    );
 
-        <button
-            type="button"
-            onclick="getLocation()"
-        >
 
-            📍 Detect My Location
+                if (!response.ok) {
 
-        </button>
+                    throw new Error(
+                        "Traffic request failed"
+                    );
+                }
 
 
-        <p id="locationStatus">
+                const data =
+                    await response.json();
 
-            Location not detected.
 
-        </p>
+                const status =
+                    data.traffic_status
+                    ||
+                    "NORMAL";
 
 
-        <p id="coordinates"></p>
+                const vehicles =
+                    data.vehicle_count
+                    ||
+                    0;
 
 
-        <a
-            id="currentLocationMap"
-            href="#"
-            target="_blank"
-            class="map-button"
-            style="display:none;"
-        >
+                updateTrafficDisplay(
+                    status,
+                    vehicles
+                );
 
-            🗺️ View My Location
+            }
 
-        </a>
+            catch (error) {
 
-    </div>
-
-
-    <div
-        class="card"
-        id="routeCard"
-    >
-
-        <h2>
-            🗺️ Alternate Route Suggestion
-        </h2>
-
-
-        <p id="routeRecommendation">
-
-            🟢 Traffic is normal.
-            No alternate route is required.
-
-        </p>
-
-
-        <p>
-
-            Enter your destination below.
-            Google Maps will show available routes.
-
-        </p>
-
-
-        <input
-            type="text"
-            id="destination"
-            placeholder="Enter your destination"
-        >
-
-
-        <br><br>
-
-
-        <button
-            type="button"
-            onclick="openGoogleMaps()"
-        >
-
-            🚗 Find Alternate Route
-
-        </button>
-
-
-        <p id="routeStatus"></p>
-
-    </div>
-
-
-    <div class="buttons">
-
-
-        <a href="{{ url_for('notifications') }}">
-
-            📱 Notifications
-
-        </a>
-
-
-        <a href="{{ url_for('logout') }}">
-
-            Logout
-
-        </a>
-
-
-    </div>
-
-
-</div>
-
-
-<script>
-
-
-let currentLatitude = null;
-
-let currentLongitude = null;
-
-
-// ==========================================
-// LIVE TRAFFIC UPDATE
-// ==========================================
-
-async function updateDashboard() {
-
-    try {
-
-        const response =
-            await fetch("/traffic");
-
-
-        const data =
-            await response.json();
-
-
-        document.getElementById(
-            "vehicles"
-        ).innerText =
-            data.vehicle_count;
-
-
-        const statusElement =
-            document.getElementById(
-                "status"
-            );
-
-
-        const alertElement =
-            document.getElementById(
-                "trafficAlert"
-            );
-
-
-        const trafficCard =
-            document.getElementById(
-                "trafficCard"
-            );
-
-
-        const routeRecommendation =
-            document.getElementById(
-                "routeRecommendation"
-            );
-
-
-        const status =
-            String(
-                data.traffic_status
-            )
-            .trim()
-            .toUpperCase();
-
-
-        statusElement.innerText =
-            status;
-
-
-        if (
-            status === "NORMAL"
-        ) {
-
-            trafficCard.className =
-                "card normal";
-
-
-            alertElement.innerText =
-                "🟢 Traffic is normal.";
-
-
-            routeRecommendation.innerText =
-                "🟢 Traffic is normal. "
-                + "No alternate route is required.";
-
+                console.error(
+                    "Traffic update error:",
+                    error
+                );
+            }
         }
 
 
-        else if (
-            status === "MODERATE"
+
+        // ==========================================
+        // UPDATE DASHBOARD DISPLAY
+        // ==========================================
+
+        function updateTrafficDisplay(
+            status,
+            vehicles
         ) {
 
-            trafficCard.className =
-                "card moderate";
-
-
-            alertElement.innerText =
-                "⚠️ Moderate traffic detected.";
-
-
-            routeRecommendation.innerText =
-                "⚠️ Moderate traffic detected. "
-                + "Consider checking an alternate route.";
-
-        }
-
-
-        else if (
-            status === "HEAVY"
-        ) {
-
-            trafficCard.className =
-                "card heavy";
-
-
-            alertElement.innerText =
-                "🚨 Heavy traffic detected! "
-                + "Consider an alternate route.";
-
-
-            routeRecommendation.innerText =
-                "🚨 Heavy traffic detected! "
-                + "We strongly recommend checking "
-                + "an alternate route.";
-
-        }
-
-    }
-
-
-    catch (error) {
-
-        console.error(
-            "Dashboard error:",
-            error
-        );
-
-    }
-
-}
-
-
-updateDashboard();
-
-
-setInterval(
-    updateDashboard,
-    1000
-);
-
-
-// ==========================================
-// LOCATION
-// ==========================================
-
-function getLocation() {
-
-    const status =
-        document.getElementById(
-            "locationStatus"
-        );
-
-
-    const coordinates =
-        document.getElementById(
-            "coordinates"
-        );
-
-
-    if (
-        !navigator.geolocation
-    ) {
-
-        status.innerText =
-            "❌ Geolocation is not supported by this browser.";
-
-        return;
-
-    }
-
-
-    status.innerText =
-        "📍 Detecting your location...";
-
-
-    navigator.geolocation.getCurrentPosition(
-
-        function(position) {
-
-
-            currentLatitude =
-                position.coords.latitude;
-
-
-            currentLongitude =
-                position.coords.longitude;
-
-
-            coordinates.innerText =
-                "Latitude: "
-                + currentLatitude
-                + " | Longitude: "
-                + currentLongitude;
-
-
-            status.innerText =
-                "✅ Location detected successfully.";
-
-
-            const mapUrl =
-                "https://www.google.com/maps/search/?api=1"
-                + "&query="
-                + currentLatitude
-                + ","
-                + currentLongitude;
-
-
-            const mapButton =
+            const trafficStatus =
                 document.getElementById(
-                    "currentLocationMap"
+                    "trafficStatus"
                 );
 
 
-            mapButton.href =
-                mapUrl;
+            const statusCard =
+                document.getElementById(
+                    "statusCard"
+                );
 
 
-            mapButton.style.display =
-                "inline-block";
+            const vehicleCount =
+                document.getElementById(
+                    "vehicleCount"
+                );
 
 
-        },
+            const vehicleCard =
+                document.getElementById(
+                    "vehicleCard"
+                );
 
 
-        function(error) {
+            trafficStatus.textContent =
+                status;
 
+
+            statusCard.textContent =
+                status;
+
+
+            vehicleCount.textContent =
+                "Vehicles: " + vehicles;
+
+
+            vehicleCard.textContent =
+                vehicles;
+
+
+            // --------------------------------------
+            // REMOVE OLD STATUS CLASSES
+            // --------------------------------------
+
+            trafficStatus.classList.remove(
+                "normal",
+                "moderate",
+                "heavy"
+            );
+
+
+            statusCard.classList.remove(
+                "normal",
+                "moderate",
+                "heavy"
+            );
+
+
+            // --------------------------------------
+            // APPLY CURRENT STATUS
+            // --------------------------------------
 
             if (
-                error.code === 1
+                status ===
+                "HEAVY"
             ) {
 
-                status.innerText =
-                    "❌ Location permission denied.";
+                trafficStatus.classList.add(
+                    "heavy"
+                );
+
+                statusCard.classList.add(
+                    "heavy"
+                );
 
             }
-
 
             else if (
-                error.code === 2
+                status ===
+                "MODERATE"
             ) {
 
-                status.innerText =
-                    "❌ Location unavailable.";
+                trafficStatus.classList.add(
+                    "moderate"
+                );
+
+                statusCard.classList.add(
+                    "moderate"
+                );
 
             }
-
-
-            else if (
-                error.code === 3
-            ) {
-
-                status.innerText =
-                    "❌ Location request timed out.";
-
-            }
-
 
             else {
 
-                status.innerText =
-                    "❌ Unable to detect location.";
+                trafficStatus.classList.add(
+                    "normal"
+                );
 
+                statusCard.classList.add(
+                    "normal"
+                );
             }
-
-        },
-
-
-        {
-
-            enableHighAccuracy: true,
-
-            timeout: 10000,
-
-            maximumAge: 0
 
         }
 
-    );
-
-}
 
 
-// ==========================================
-// GOOGLE MAPS
-// ==========================================
+        // ==========================================
+        // CHECK NOTIFICATION PERMISSION
+        // ==========================================
 
-function openGoogleMaps() {
+        function updateNotificationStatus() {
 
-    const destination =
-        document.getElementById(
-            "destination"
-        )
-        .value
-        .trim();
+            const element =
+                document.getElementById(
+                    "notificationStatus"
+                );
 
-
-    const routeStatus =
-        document.getElementById(
-            "routeStatus"
-        );
-
-
-    if (!destination) {
-
-        routeStatus.innerText =
-            "⚠️ Please enter a destination.";
-
-        return;
-
-    }
-
-
-    if (
-        currentLatitude !== null
-        &&
-        currentLongitude !== null
-    ) {
-
-
-        const origin =
-            currentLatitude
-            + ","
-            + currentLongitude;
-
-
-        const mapsUrl =
-            "https://www.google.com/maps/dir/?api=1"
-            + "&origin="
-            + encodeURIComponent(
-                origin
-            )
-            + "&destination="
-            + encodeURIComponent(
-                destination
-            )
-            + "&travelmode=driving";
-
-
-        routeStatus.innerText =
-            "🗺️ Opening Google Maps from "
-            + "your current location...";
-
-
-        window.open(
-            mapsUrl,
-            "_blank"
-        );
-
-
-        return;
-
-    }
-
-
-    routeStatus.innerText =
-        "📍 Location not detected. "
-        + "Please detect your location first.";
-
-}
-
-
-// ==========================================
-// ENTER KEY SUPPORT
-// ==========================================
-
-document
-    .getElementById("destination")
-    .addEventListener(
-        "keypress",
-        function(event) {
 
             if (
-                event.key === "Enter"
+                !("Notification" in window)
             ) {
 
-                openGoogleMaps();
+                element.textContent =
+                    "Not supported";
 
+                return;
+            }
+
+
+            if (
+                Notification.permission ===
+                "granted"
+            ) {
+
+                element.textContent =
+                    "Enabled";
+
+                element.style.color =
+                    "#198754";
+            }
+
+            else if (
+                Notification.permission ===
+                "denied"
+            ) {
+
+                element.textContent =
+                    "Blocked";
+
+                element.style.color =
+                    "#dc3545";
+            }
+
+            else {
+
+                element.textContent =
+                    "Not enabled";
+
+                element.style.color =
+                    "#fd7e14";
             }
 
         }
-    );
 
 
-// ==========================================
-// SERVICE WORKER / PWA
-// ==========================================
 
-if ("serviceWorker" in navigator) {
+        // ==========================================
+        // LOCATION
+        // ==========================================
 
-    window.addEventListener(
-        "load",
-        function () {
+        function getUserLocation() {
 
-            navigator.serviceWorker.register(
-                "/firebase-messaging-sw.js"
-            )
+            const status =
+                document.getElementById(
+                    "locationStatus"
+                );
 
-            .then(
-                function (registration) {
 
-                    console.log(
-                        "✅ Smart Traffic service worker registered:",
-                        registration.scope
-                    );
+            if (
+                !navigator.geolocation
+            ) {
 
-                }
-            )
+                status.textContent =
+                    "Geolocation is not supported by this browser.";
 
-            .catch(
-                function (error) {
+                return;
+            }
+
+
+            status.textContent =
+                "Detecting your location...";
+
+
+            navigator.geolocation.getCurrentPosition(
+
+                function(position) {
+
+                    const latitude =
+                        position.coords.latitude;
+
+
+                    const longitude =
+                        position.coords.longitude;
+
+
+                    status.innerHTML =
+                        "Location detected.<br>" +
+                        "Latitude: " +
+                        latitude.toFixed(6) +
+                        "<br>" +
+                        "Longitude: " +
+                        longitude.toFixed(6);
+
+
+                    window.userLatitude =
+                        latitude;
+
+                    window.userLongitude =
+                        longitude;
+
+                },
+
+                function(error) {
 
                     console.error(
-                        "❌ Service worker registration failed:",
+                        "Location error:",
                         error
                     );
 
+
+                    status.textContent =
+                        "Unable to detect location. Please allow location access.";
+
+                },
+
+                {
+                    enableHighAccuracy:
+                        true,
+
+                    timeout:
+                        10000,
+
+                    maximumAge:
+                        60000
                 }
+
             );
 
         }
-    );
 
-}
 
-</script>
+
+        // ==========================================
+        // GOOGLE MAPS
+        // ==========================================
+
+        function openGoogleMaps() {
+
+            const destination =
+                document.getElementById(
+                    "destination"
+                ).value.trim();
+
+
+            if (!destination) {
+
+                alert(
+                    "Please enter your destination."
+                );
+
+                return;
+            }
+
+
+            let url;
+
+
+            if (
+                window.userLatitude &&
+                window.userLongitude
+            ) {
+
+                url =
+                    "https://www.google.com/maps/dir/?api=1" +
+                    "&origin=" +
+                    window.userLatitude +
+                    "," +
+                    window.userLongitude +
+                    "&destination=" +
+                    encodeURIComponent(
+                        destination
+                    ) +
+                    "&travelmode=driving";
+
+            }
+
+            else {
+
+                url =
+                    "https://www.google.com/maps/dir/?api=1" +
+                    "&destination=" +
+                    encodeURIComponent(
+                        destination
+                    ) +
+                    "&travelmode=driving";
+            }
+
+
+            window.open(
+                url,
+                "_blank"
+            );
+
+        }
+
+
+
+        // ==========================================
+        // INITIAL PAGE LOAD
+        // ==========================================
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            function() {
+
+                loadTraffic();
+
+                updateNotificationStatus();
+
+            }
+        );
+
+
+
+        // ==========================================
+        // CONTINUOUS TRAFFIC REFRESH
+        // ==========================================
+        //
+        // This does NOT create notifications.
+        // It only keeps the dashboard traffic
+        // information synchronized with Render.
+        //
+
+        setInterval(
+            function() {
+
+                loadTraffic();
+
+            },
+            2000
+        );
+
+
+    </script>
 
 
 </body>
 
 </html>
+```
