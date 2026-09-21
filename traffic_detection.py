@@ -1,96 +1,409 @@
 import cv2
 import time
-import requests
-import serial
 import statistics
+import threading
+import queue
 import uuid
 
-from collections import deque
+import requests
+
+import serial
+
 from ultralytics import YOLO
 
 
-# ============================================================
+# =========================================================
 # CONFIGURATION
-# ============================================================
+# =========================================================
 
-ARDUINO_PORT = "COM7"
+MODEL_PATH = "yolo11n.pt"
 
-ARDUINO_BAUDRATE = 9600
-
-SERVER_URL = (
-    "https://smart-traffic-system-c36o.onrender.com/update_traffic"
-)
-
-# Send traffic information to Render every 2 seconds.
-SERVER_UPDATE_INTERVAL = 2.0
-
-# Number of camera frames used for vehicle-count smoothing.
-SMOOTHING_FRAMES = 7
-
-# Number of consecutive calculated statuses required
-# before accepting a new traffic status.
-STATUS_CONFIRMATION_COUNT = 3
-
-# YOLO confidence.
-YOLO_CONFIDENCE = 0.35
-
-# Camera.
 CAMERA_INDEX = 0
 
 
-# ============================================================
-# VEHICLE CLASSES
-# ============================================================
+# ---------------------------------------------------------
+# RENDER SERVER
+# ---------------------------------------------------------
 
-# COCO classes:
-#
-# 2  = car
-# 3  = motorcycle
-# 5  = bus
-# 7  = truck
+SERVER_URL = (
+    "https://smart-traffic-system-c36o.onrender.com"
+    "/update_traffic"
+)
+
+
+# ---------------------------------------------------------
+# ARDUINO
+# ---------------------------------------------------------
+
+ARDUINO_PORT = "COM7"
+
+ARDUINO_BAUD_RATE = 9600
+
+
+# ---------------------------------------------------------
+# YOLO VEHICLE CLASSES
+# ---------------------------------------------------------
 
 VEHICLE_CLASSES = {
-    2,
-    3,
-    5,
-    7
+
+    "car",
+
+    "motorcycle",
+
+    "bus",
+
+    "truck"
+
 }
 
 
-# ============================================================
-# TRAFFIC STATUS
-# ============================================================
+# =========================================================
+# TRAFFIC THRESHOLDS
+# =========================================================
 
-def calculate_status(vehicle_count):
+# 0 - 3 vehicles
+# NORMAL
 
-    # --------------------------------------------------------
-    # NORMAL
-    # --------------------------------------------------------
+# 4 - 6 vehicles
+# MODERATE
 
-    if vehicle_count <= 3:
+# 7+ vehicles
+# HEAVY
+
+NORMAL_MAX = 3
+
+MODERATE_MAX = 6
+
+
+# =========================================================
+# SMOOTHING
+# =========================================================
+
+SMOOTHING_FRAMES = 7
+
+
+STATUS_CONFIRMATION_COUNT = 3
+
+
+# =========================================================
+# SERVER UPDATE
+# =========================================================
+#
+# This is how often the latest traffic state is sent
+# to Render.
+#
+# IMPORTANT:
+# The HTTP request happens in a separate thread.
+# Therefore YOLO does NOT wait for Render.
+#
+
+SERVER_UPDATE_INTERVAL = 1.0
+
+
+# =========================================================
+# HTTP TIMEOUT
+# =========================================================
+
+SERVER_TIMEOUT = 3
+
+
+# =========================================================
+# CREATE UNIQUE DETECTOR ID
+# =========================================================
+
+SOURCE_ID = str(
+    uuid.uuid4()
+)
+
+
+# =========================================================
+# GLOBAL STATE
+# =========================================================
+
+latest_update = None
+
+update_lock = threading.Lock()
+
+
+stop_sender = False
+
+
+sequence_number = 0
+
+
+# =========================================================
+# HTTP SESSION
+# =========================================================
+
+http_session = requests.Session()
+
+
+# =========================================================
+# SEND LATEST TRAFFIC TO RENDER
+# =========================================================
+
+def render_sender():
+
+    global latest_update
+
+    global stop_sender
+
+
+    print(
+        "🌐 Render sender thread started."
+    )
+
+
+    last_sent_signature = None
+
+    last_send_time = 0
+
+
+    while not stop_sender:
+
+        update = None
+
+
+        # -------------------------------------------------
+        # GET LATEST UPDATE
+        # -------------------------------------------------
+
+        with update_lock:
+
+            if latest_update is not None:
+
+                update = latest_update.copy()
+
+
+        if update is None:
+
+            time.sleep(
+                0.1
+            )
+
+            continue
+
+
+        current_time = time.time()
+
+
+        # -------------------------------------------------
+        # SEND EVERY SERVER_UPDATE_INTERVAL
+        # -------------------------------------------------
+
+        if (
+            current_time -
+            last_send_time
+            <
+            SERVER_UPDATE_INTERVAL
+        ):
+
+            time.sleep(
+                0.05
+            )
+
+            continue
+
+
+        signature = (
+
+            update["traffic_status"],
+
+            update["vehicle_count"],
+
+            update["sequence"]
+
+        )
+
+
+        # -------------------------------------------------
+        # SEND
+        # -------------------------------------------------
+
+        try:
+
+            response = (
+                http_session.post(
+
+                    SERVER_URL,
+
+                    json=update,
+
+                    timeout=SERVER_TIMEOUT
+
+                )
+            )
+
+
+            last_send_time = (
+                time.time()
+            )
+
+
+            if response.ok:
+
+                try:
+
+                    result = (
+                        response.json()
+                    )
+
+                except Exception:
+
+                    result = {}
+
+
+                if result.get(
+                    "ignored"
+                ):
+
+                    print(
+                        "🌐 Render: "
+                        "old update ignored."
+                    )
+
+                else:
+
+                    print(
+                        "🌐 Render: "
+                        f"{update['traffic_status']} | "
+                        f"Vehicles: "
+                        f"{update['vehicle_count']} | "
+                        f"Seq: "
+                        f"{update['sequence']}"
+                    )
+
+
+            else:
+
+                print(
+                    "⚠️ Render returned HTTP "
+                    f"{response.status_code}"
+                )
+
+
+        except requests.exceptions.Timeout:
+
+            last_send_time = (
+                time.time()
+            )
+
+            print(
+                "⚠️ Render request timed out."
+                " Camera continues normally."
+            )
+
+
+        except requests.exceptions.RequestException as error:
+
+            last_send_time = (
+                time.time()
+            )
+
+            print(
+                "⚠️ Render connection error:"
+            )
+
+            print(
+                error
+            )
+
+
+        except Exception as error:
+
+            last_send_time = (
+                time.time()
+            )
+
+            print(
+                "⚠️ Render update error:"
+            )
+
+            print(
+                error
+            )
+
+
+        time.sleep(
+            0.05
+        )
+
+
+    print(
+        "🌐 Render sender thread stopped."
+    )
+
+
+# =========================================================
+# QUEUE LATEST SERVER UPDATE
+# =========================================================
+
+def queue_render_update(
+    traffic_status,
+    vehicle_count,
+    sequence
+):
+
+    global latest_update
+
+
+    data = {
+
+        "vehicle_count":
+            int(vehicle_count),
+
+        "traffic_status":
+            traffic_status,
+
+        "source_id":
+            SOURCE_ID,
+
+        "sequence":
+            sequence
+
+    }
+
+
+    with update_lock:
+
+        # -------------------------------------------------
+        # IMPORTANT:
+        #
+        # We keep ONLY the newest update.
+        #
+        # If internet is slow, the program does not
+        # build a huge queue of old traffic states.
+        # -------------------------------------------------
+
+        latest_update = data
+
+
+# =========================================================
+# CLASSIFY TRAFFIC
+# =========================================================
+
+def classify_traffic(
+    vehicle_count
+):
+
+    if vehicle_count <= NORMAL_MAX:
 
         return "NORMAL"
 
-    # --------------------------------------------------------
-    # MODERATE
-    # --------------------------------------------------------
 
-    elif vehicle_count <= 6:
+    elif vehicle_count <= MODERATE_MAX:
 
         return "MODERATE"
 
-    # --------------------------------------------------------
-    # HEAVY
-    # --------------------------------------------------------
 
     else:
 
         return "HEAVY"
 
 
-# ============================================================
-# ARDUINO
-# ============================================================
+# =========================================================
+# ARDUINO SETUP
+# =========================================================
 
 arduino = None
 
@@ -98,84 +411,122 @@ arduino = None
 try:
 
     arduino = serial.Serial(
+
         ARDUINO_PORT,
-        ARDUINO_BAUDRATE,
+
+        ARDUINO_BAUD_RATE,
+
         timeout=1
+
     )
+
 
     time.sleep(2)
 
-    print("==========================================")
+
     print(
-        f"✅ Arduino connected: {ARDUINO_PORT}"
+        "======================================"
     )
-    print("==========================================")
 
-except Exception as e:
-
-    print("==========================================")
-    print("⚠️ Arduino connection failed")
     print(
-        f"   {e}"
+        f"Arduino connected: {ARDUINO_PORT}"
     )
-    print("==========================================")
 
-    arduino = None
+    print(
+        "======================================"
+    )
 
 
-# ============================================================
+except Exception as error:
+
+    print(
+        "⚠️ Arduino connection failed:"
+    )
+
+    print(
+        error
+    )
+
+    print(
+        "Continuing without Arduino..."
+    )
+
+
+# =========================================================
 # SEND STATUS TO ARDUINO
-# ============================================================
+# =========================================================
 
-def send_to_arduino(status):
+def send_to_arduino(
+    traffic_status
+):
 
     if arduino is None:
 
         return
 
+
     try:
 
+        command = (
+            traffic_status
+            + "\n"
+        )
+
+
         arduino.write(
-            (status + "\n").encode()
+            command.encode()
+        )
+
+
+        print(
+            f"🔌 Arduino: "
+            f"{traffic_status}"
+        )
+
+
+    except Exception as error:
+
+        print(
+            "⚠️ Arduino send error:"
         )
 
         print(
-            f"🔴 Arduino: {status}"
-        )
-
-    except Exception as e:
-
-        print(
-            "⚠️ Arduino send error:",
-            e
+            error
         )
 
 
-# ============================================================
-# LOAD YOLO
-# ============================================================
+# =========================================================
+# LOAD YOLO MODEL
+# =========================================================
 
-print("Loading YOLO model...")
-
-model = YOLO(
-    "yolo11n.pt"
+print(
+    "Loading YOLO model..."
 )
 
-print("✅ YOLO model loaded")
+
+model = YOLO(
+    MODEL_PATH
+)
 
 
-# ============================================================
-# START CAMERA
-# ============================================================
+print(
+    "YOLO model loaded."
+)
 
-camera = cv2.VideoCapture(
+
+# =========================================================
+# OPEN CAMERA
+# =========================================================
+
+cap = cv2.VideoCapture(
     CAMERA_INDEX
 )
 
-if not camera.isOpened():
+
+if not cap.isOpened():
 
     print(
-        "❌ Camera could not be opened."
+        "❌ Could not open camera."
     )
 
     if arduino:
@@ -185,93 +536,72 @@ if not camera.isOpened():
     raise SystemExit
 
 
-print("✅ Camera started")
-
-
-# ============================================================
-# UNIQUE DETECTOR SESSION
-#
-# Every time this program starts, a new source_id is created.
-# This lets Render recognize that sequence numbers belong to
-# this particular detector session.
-# ============================================================
-
-SOURCE_ID = str(
-    uuid.uuid4()
+print(
+    "📷 Camera started."
 )
 
-sequence = 0
 
+# =========================================================
+# START RENDER THREAD
+# =========================================================
 
-# ============================================================
-# VARIABLES
-# ============================================================
+sender_thread = threading.Thread(
 
-count_history = deque(
-    maxlen=SMOOTHING_FRAMES
+    target=render_sender,
+
+    daemon=True
+
 )
 
-confirmed_status = "NORMAL"
+
+sender_thread.start()
+
+
+# =========================================================
+# TRAFFIC SMOOTHING DATA
+# =========================================================
+
+recent_counts = []
+
 
 candidate_status = None
 
 candidate_count = 0
 
-last_server_update = 0
 
-last_sent_status = None
-
-last_sent_vehicle_count = None
+confirmed_status = "NORMAL"
 
 
-# ============================================================
-# START MESSAGE
-# ============================================================
+# =========================================================
+# INITIAL SERVER UPDATE
+# =========================================================
 
-print("")
-print("==========================================")
-print("🚦 SMART TRAFFIC DETECTION STARTED")
-print("==========================================")
-print("")
-print(
-    f"Count smoothing: {SMOOTHING_FRAMES} frames"
-)
-print(
-    f"Status confirmation: "
-    f"{STATUS_CONFIRMATION_COUNT} cycles"
-)
-print(
-    f"Render update: every "
-    f"{SERVER_UPDATE_INTERVAL} seconds"
-)
-print("")
-print(
-    "Notifications are sent ONLY when the "
-    "confirmed status changes."
-)
-print("")
-print("Press Q to stop.")
-print("")
+sequence_number += 1
 
 
-# ============================================================
-# INITIAL ARDUINO STATUS
-# ============================================================
+queue_render_update(
 
-send_to_arduino(
-    "NORMAL"
+    confirmed_status,
+
+    0,
+
+    sequence_number
+
 )
 
 
-# ============================================================
-# MAIN LOOP
-# ============================================================
+# =========================================================
+# MAIN CAMERA LOOP
+# =========================================================
 
 try:
 
     while True:
 
-        success, frame = camera.read()
+        success, frame = (
+            cap.read()
+        )
+
 
         if not success:
 
@@ -279,25 +609,29 @@ try:
                 "⚠️ Camera frame could not be read."
             )
 
-            time.sleep(0.1)
+            time.sleep(
+                0.1
+            )
 
             continue
 
-        # ----------------------------------------------------
+
+        # -------------------------------------------------
         # YOLO DETECTION
-        # ----------------------------------------------------
+        # -------------------------------------------------
 
         results = model(
             frame,
-            conf=YOLO_CONFIDENCE,
             verbose=False
         )
 
+
         raw_vehicle_count = 0
 
-        # ----------------------------------------------------
-        # Count vehicles
-        # ----------------------------------------------------
+
+        # -------------------------------------------------
+        # COUNT VEHICLES
+        # -------------------------------------------------
 
         for result in results:
 
@@ -305,252 +639,208 @@ try:
 
                 continue
 
+
             for box in result.boxes:
 
                 class_id = int(
                     box.cls[0]
                 )
 
-                if class_id in VEHICLE_CLASSES:
+
+                class_name = (
+                    model.names[class_id]
+                    .lower()
+                )
+
+
+                if class_name in VEHICLE_CLASSES:
 
                     raw_vehicle_count += 1
 
-        # ----------------------------------------------------
-        # Add raw count to smoothing history
-        # ----------------------------------------------------
 
-        count_history.append(
+        # -------------------------------------------------
+        # SMOOTH VEHICLE COUNT
+        # -------------------------------------------------
+
+        recent_counts.append(
             raw_vehicle_count
         )
 
-        # ----------------------------------------------------
-        # Median smoothing
-        # ----------------------------------------------------
 
-        if len(count_history) > 0:
+        if len(recent_counts) > SMOOTHING_FRAMES:
 
-            smoothed_count = int(
-                round(
-                    statistics.median(
-                        count_history
-                    )
-                )
+            recent_counts.pop(0)
+
+
+        smoothed_count = int(
+            statistics.median(
+                recent_counts
             )
-
-        else:
-
-            smoothed_count = 0
-
-        # ----------------------------------------------------
-        # Calculate candidate status
-        # ----------------------------------------------------
-
-        calculated_status = calculate_status(
-            smoothed_count
         )
 
-        # ----------------------------------------------------
+
+        # -------------------------------------------------
+        # CLASSIFY TRAFFIC
+        # -------------------------------------------------
+
+        detected_status = (
+            classify_traffic(
+                smoothed_count
+            )
+        )
+
+
+        print(
+            f"Raw: {raw_vehicle_count} | "
+            f"Smooth: {smoothed_count} | "
+            f"Detected: {detected_status}"
+        )
+
+
+        # -------------------------------------------------
         # STATUS CONFIRMATION
+        # -------------------------------------------------
         #
-        # A new status must appear 3 consecutive
-        # processing cycles before becoming confirmed.
-        # ----------------------------------------------------
+        # A status must appear consistently for several
+        # frames before it becomes confirmed.
+        #
+        # This prevents:
+        #
+        # NORMAL
+        # HEAVY
+        # NORMAL
+        # HEAVY
+        #
+        # caused by a single YOLO counting fluctuation.
+        #
 
-        if calculated_status == confirmed_status:
+        if detected_status == candidate_status:
 
-            candidate_status = None
+            candidate_count += 1
 
-            candidate_count = 0
 
         else:
 
-            if calculated_status == candidate_status:
+            candidate_status = (
+                detected_status
+            )
 
-                candidate_count += 1
+            candidate_count = 1
 
-            else:
 
-                candidate_status = calculated_status
+        # -------------------------------------------------
+        # CONFIRM STATUS
+        # -------------------------------------------------
 
-                candidate_count = 1
+        if (
+            candidate_count
+            >=
+            STATUS_CONFIRMATION_COUNT
+        ):
 
-            # ------------------------------------------------
-            # Confirm new status
-            # ------------------------------------------------
-
-            if candidate_count >= STATUS_CONFIRMATION_COUNT:
+            if (
+                candidate_status
+                !=
+                confirmed_status
+            ):
 
                 confirmed_status = (
-                    calculated_status
+                    candidate_status
                 )
 
-                candidate_status = None
 
-                candidate_count = 0
-
-                print("")
                 print(
-                    "=========================================="
+                    "======================================"
                 )
 
                 print(
-                    f"✅ CONFIRMED STATUS: "
+                    "CONFIRMED STATUS: "
                     f"{confirmed_status}"
                 )
 
                 print(
-                    "=========================================="
+                    f"Vehicles: "
+                    f"{smoothed_count}"
                 )
 
-                # --------------------------------------------
-                # Arduino changes immediately
-                # --------------------------------------------
+                print(
+                    "======================================"
+                )
+
+
+                # -----------------------------------------
+                # ARDUINO
+                # -----------------------------------------
 
                 send_to_arduino(
                     confirmed_status
                 )
 
-        # ----------------------------------------------------
-        # SEND TO RENDER
-        #
-        # Only one request can be active at a time because
-        # requests.post() completes before the loop continues.
-        #
-        # This prevents a pile-up of overlapping requests.
-        # ----------------------------------------------------
 
-        current_time = time.time()
+                # -----------------------------------------
+                # RENDER
+                # -----------------------------------------
 
-        if (
-            current_time - last_server_update
-            >= SERVER_UPDATE_INTERVAL
-        ):
+                sequence_number += 1
 
-            sequence += 1
 
-            payload = {
+                queue_render_update(
 
-                "vehicle_count":
-                    smoothed_count,
-
-                "traffic_status":
                     confirmed_status,
 
-                "source_id":
-                    SOURCE_ID,
+                    smoothed_count,
 
-                "sequence":
-                    sequence
-            }
+                    sequence_number
 
-            try:
-
-                response = requests.post(
-
-                    SERVER_URL,
-
-                    json=payload,
-
-                    timeout=8
                 )
 
-                last_server_update = (
-                    time.time()
-                )
 
-                # ------------------------------------------------
-                # Server response
-                # ------------------------------------------------
+        # -------------------------------------------------
+        # KEEP RENDER UPDATED WITH CURRENT COUNT
+        # -------------------------------------------------
+        #
+        # This updates vehicle count without causing a
+        # notification unless the traffic status changes.
+        #
 
-                if response.ok:
+        else:
 
-                    try:
+            # Only update the queued data.
+            #
+            # The Render thread controls the actual
+            # network request frequency.
 
-                        response_data = (
-                            response.json()
-                        )
+            queue_render_update(
 
-                    except Exception:
+                confirmed_status,
 
-                        response_data = {}
+                smoothed_count,
 
-                    ignored = response_data.get(
-                        "ignored",
-                        False
-                    )
+                sequence_number
 
-                    if ignored:
+            )
 
-                        print(
-                            f"⏭️ Render ignored old "
-                            f"request #{sequence}"
-                        )
 
-                    else:
+        # -------------------------------------------------
+        # DRAW DETECTIONS
+        # -------------------------------------------------
 
-                        print(
-                            f"🌐 Render: "
-                            f"{confirmed_status} | "
-                            f"Vehicles: "
-                            f"{smoothed_count}"
-                        )
-
-                else:
-
-                    print(
-                        f"⚠️ Render returned "
-                        f"HTTP {response.status_code}"
-                    )
-
-            except requests.exceptions.Timeout:
-
-                last_server_update = (
-                    time.time()
-                )
-
-                print(
-                    "⚠️ Render request timed out."
-                )
-
-            except requests.exceptions.RequestException as e:
-
-                last_server_update = (
-                    time.time()
-                )
-
-                print(
-                    "⚠️ Render request failed:",
-                    e
-                )
-
-            except Exception as e:
-
-                last_server_update = (
-                    time.time()
-                )
-
-                print(
-                    "⚠️ Unexpected Render error:",
-                    e
-                )
-
-        # ----------------------------------------------------
-        # DISPLAY INFORMATION ON CAMERA
-        # ----------------------------------------------------
-
-        display_text = (
-            f"Vehicles: {smoothed_count}"
+        annotated_frame = (
+            results[0].plot()
+            if results
+            else frame
         )
 
-        status_text = (
-            f"Traffic: {confirmed_status}"
-        )
+
+        # -------------------------------------------------
+        # DISPLAY STATUS
+        # -------------------------------------------------
 
         cv2.putText(
 
-            frame,
+            annotated_frame,
 
-            display_text,
+            f"Vehicles: {smoothed_count}",
 
             (20, 40),
 
@@ -561,13 +851,15 @@ try:
             (0, 255, 0),
 
             2
+
         )
+
 
         cv2.putText(
 
-            frame,
+            annotated_frame,
 
-            status_text,
+            f"Traffic: {confirmed_status}",
 
             (20, 80),
 
@@ -578,50 +870,72 @@ try:
             (0, 255, 255),
 
             2
+
         )
 
-        # ----------------------------------------------------
-        # SHOW FRAME
-        # ----------------------------------------------------
+
+        # -------------------------------------------------
+        # SHOW CAMERA
+        # -------------------------------------------------
 
         cv2.imshow(
+
             "Smart Traffic Detection",
-            frame
+
+            annotated_frame
+
         )
 
-        # ----------------------------------------------------
-        # Q TO EXIT
-        # ----------------------------------------------------
 
-        key = cv2.waitKey(1) & 0xFF
+        # -------------------------------------------------
+        # EXIT WITH Q
+        # -------------------------------------------------
+
+        key = (
+            cv2.waitKey(1)
+            & 0xFF
+        )
+
 
         if key == ord("q"):
-
-            print("")
-            print(
-                "🛑 Q pressed. Stopping..."
-            )
 
             break
 
 
-# ============================================================
-# CLEANUP
-# ============================================================
-
 except KeyboardInterrupt:
 
-    print("")
     print(
-        "🛑 Program interrupted."
+        "Program stopped by user."
     )
 
 
 finally:
 
-    camera.release()
+    # =====================================================
+    # STOP RENDER THREAD
+    # =====================================================
+
+    stop_sender = True
+
+
+    sender_thread.join(
+        timeout=2
+    )
+
+
+    # =====================================================
+    # CLOSE CAMERA
+    # =====================================================
+
+    cap.release()
+
 
     cv2.destroyAllWindows()
+
+
+    # =====================================================
+    # CLOSE ARDUINO
+    # =====================================================
 
     if arduino is not None:
 
@@ -633,9 +947,15 @@ finally:
 
             pass
 
-    print("")
-    print("==========================================")
+
     print(
-        "✅ Smart Traffic Detection stopped"
+        "======================================"
     )
-    print("==========================================")
+
+    print(
+        "Smart Traffic Detection stopped."
+    )
+
+    print(
+        "======================================"
+    )
