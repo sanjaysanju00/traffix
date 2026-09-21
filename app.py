@@ -11,7 +11,6 @@ from flask import (
 import sqlite3
 import os
 import json
-import uuid
 
 from werkzeug.security import (
     generate_password_hash,
@@ -46,6 +45,7 @@ DATABASE = "traffic.db"
 
 
 def get_db():
+
     conn = sqlite3.connect(
         DATABASE,
         timeout=10
@@ -90,12 +90,6 @@ def init_database():
 
     # --------------------------------------------------------
     # TRAFFIC SERVER STATE
-    #
-    # This protects against:
-    # - duplicate requests
-    # - delayed Render requests
-    # - old/out-of-order requests
-    # - repeated notifications
     # --------------------------------------------------------
 
     cursor.execute("""
@@ -139,13 +133,23 @@ def initialize_firebase():
 
             firebase_initialized = True
 
-            print("✅ Firebase Admin already initialized")
+            print(
+                "✅ Firebase Admin already initialized"
+            )
 
             return
 
-        service_account_path = "firebase-service-account.json"
+        # ----------------------------------------------------
+        # Local / Render secret file
+        # ----------------------------------------------------
 
-        if os.path.exists(service_account_path):
+        service_account_path = (
+            "firebase-service-account.json"
+        )
+
+        if os.path.exists(
+            service_account_path
+        ):
 
             cred = credentials.Certificate(
                 service_account_path
@@ -165,15 +169,17 @@ def initialize_firebase():
             return
 
         # ----------------------------------------------------
-        # Render secret file path
+        # Render secret-file environment variable
         # ----------------------------------------------------
 
         render_secret_path = os.environ.get(
             "FIREBASE_SERVICE_ACCOUNT"
         )
 
-        if render_secret_path and os.path.exists(
+        if (
             render_secret_path
+            and
+            os.path.exists(render_secret_path)
         ):
 
             cred = credentials.Certificate(
@@ -254,7 +260,7 @@ traffic_data = {
 
 
 # ============================================================
-# SEND FIREBASE TRAFFIC NOTIFICATION
+# SEND TRAFFIC NOTIFICATION
 # ============================================================
 
 def send_traffic_notification(
@@ -292,7 +298,7 @@ def send_traffic_notification(
         return 0
 
     # --------------------------------------------------------
-    # Notification content
+    # Notification message
     # --------------------------------------------------------
 
     if traffic_status == "HEAVY":
@@ -327,7 +333,7 @@ def send_traffic_notification(
     invalid_tokens = []
 
     # --------------------------------------------------------
-    # Send notification to every registered device
+    # Send to registered devices
     # --------------------------------------------------------
 
     for row in rows:
@@ -347,11 +353,11 @@ def send_traffic_notification(
 
                 data={
 
-                    "traffic_status": traffic_status,
+                    "traffic_status":
+                        traffic_status,
 
-                    "vehicle_count": str(
-                        vehicle_count
-                    )
+                    "vehicle_count":
+                        str(vehicle_count)
                 },
 
                 token=token
@@ -362,7 +368,7 @@ def send_traffic_notification(
             sent_count += 1
 
             print(
-                f"   ✅ Notification sent to device"
+                "   ✅ Notification sent to device"
             )
 
         except Exception as e:
@@ -373,10 +379,6 @@ def send_traffic_notification(
                 "   ❌ Firebase notification failed:",
                 error_text
             )
-
-            # ------------------------------------------------
-            # Remove obviously invalid/unregistered tokens
-            # ------------------------------------------------
 
             if (
                 "registration-token-not-registered"
@@ -389,7 +391,7 @@ def send_traffic_notification(
                 invalid_tokens.append(token)
 
     # --------------------------------------------------------
-    # Remove invalid tokens
+    # Remove invalid Firebase tokens
     # --------------------------------------------------------
 
     if invalid_tokens:
@@ -410,7 +412,8 @@ def send_traffic_notification(
         conn.close()
 
         print(
-            f"🧹 Removed {len(invalid_tokens)} invalid device(s)"
+            f"🧹 Removed {len(invalid_tokens)} "
+            f"invalid device(s)"
         )
 
     return sent_count
@@ -461,7 +464,13 @@ def register():
             ""
         )
 
-        if not name or not email or not password:
+        if (
+            not name
+            or
+            not email
+            or
+            not password
+        ):
 
             return render_template(
                 "register.html",
@@ -556,9 +565,13 @@ def login():
 
         conn.close()
 
-        if user and check_password_hash(
-            user["password"],
-            password
+        if (
+            user
+            and
+            check_password_hash(
+                user["password"],
+                password
+            )
         ):
 
             session.clear()
@@ -636,7 +649,7 @@ def notifications():
 
 
 # ============================================================
-# REGISTER FIREBASE TOKEN
+# FIREBASE TOKEN REGISTRATION
 # ============================================================
 
 @app.route(
@@ -648,8 +661,11 @@ def firebase_token():
     if "user_id" not in session:
 
         return jsonify({
+
             "success": False,
+
             "message": "Not logged in"
+
         }), 401
 
     try:
@@ -665,8 +681,11 @@ def firebase_token():
         if not token:
 
             return jsonify({
+
                 "success": False,
+
                 "message": "Token missing"
+
             }), 400
 
         user_id = session["user_id"]
@@ -689,14 +708,16 @@ def firebase_token():
         conn.close()
 
         print(
-            f"✅ Firebase token registered for user {user_id}"
+            f"✅ Firebase token registered "
+            f"for user {user_id}"
         )
 
         return jsonify({
 
             "success": True,
 
-            "message": "Firebase token registered"
+            "message":
+                "Firebase token registered"
         })
 
     except Exception as e:
@@ -711,6 +732,7 @@ def firebase_token():
             "success": False,
 
             "message": str(e)
+
         }), 500
 
 
@@ -727,15 +749,22 @@ def test_firebase_notification():
     if "user_id" not in session:
 
         return jsonify({
+
             "success": False,
+
             "message": "Not logged in"
+
         }), 401
 
     if not firebase_initialized:
 
         return jsonify({
+
             "success": False,
-            "message": "Firebase not initialized"
+
+            "message":
+                "Firebase not initialized"
+
         }), 500
 
     try:
@@ -764,6 +793,7 @@ def test_firebase_notification():
 
                 "message":
                     "No Firebase device registered."
+
             }), 400
 
         sent = 0
@@ -778,7 +808,10 @@ def test_firebase_notification():
 
                         title="🚦 Smart Traffic Test",
 
-                        body="Test notification received successfully."
+                        body=(
+                            "Test notification "
+                            "received successfully."
+                        )
                     ),
 
                     token=row["token"]
@@ -803,6 +836,7 @@ def test_firebase_notification():
 
                 "message":
                     "Unable to send notification."
+
             }), 500
 
         return jsonify({
@@ -810,7 +844,9 @@ def test_firebase_notification():
             "success": True,
 
             "message":
-                f"Test notification sent to {sent} device(s)."
+                f"Test notification sent "
+                f"to {sent} device(s)."
+
         })
 
     except Exception as e:
@@ -825,11 +861,31 @@ def test_firebase_notification():
             "success": False,
 
             "message": str(e)
+
         }), 500
 
 
 # ============================================================
-# UPDATE TRAFFIC
+# GET CURRENT TRAFFIC
+#
+# THIS IS USED BY dashboard.html
+# ============================================================
+
+@app.route("/traffic")
+def traffic():
+
+    return jsonify({
+
+        "vehicle_count":
+            traffic_data["vehicle_count"],
+
+        "traffic_status":
+            traffic_data["traffic_status"]
+    })
+
+
+# ============================================================
+# UPDATE TRAFFIC FROM YOLO
 # ============================================================
 
 @app.route(
@@ -845,7 +901,7 @@ def update_traffic():
         ) or {}
 
         # ----------------------------------------------------
-        # Read request
+        # Read values
         # ----------------------------------------------------
 
         vehicle_count = int(
@@ -877,7 +933,7 @@ def update_traffic():
         )
 
         # ----------------------------------------------------
-        # Validate
+        # Validate status
         # ----------------------------------------------------
 
         allowed_statuses = {
@@ -894,6 +950,7 @@ def update_traffic():
 
                 "message":
                     "Invalid traffic status"
+
             }), 400
 
         if vehicle_count < 0:
@@ -908,6 +965,7 @@ def update_traffic():
 
                 "message":
                     "source_id is required"
+
             }), 400
 
         if sequence < 1:
@@ -918,19 +976,16 @@ def update_traffic():
 
                 "message":
                     "Invalid sequence"
+
             }), 400
 
         # ----------------------------------------------------
-        # Open database
+        # Get server state
         # ----------------------------------------------------
 
         conn = get_db()
 
         cursor = conn.cursor()
-
-        # ----------------------------------------------------
-        # Lock/update traffic state safely
-        # ----------------------------------------------------
 
         cursor.execute("""
             SELECT
@@ -950,10 +1005,7 @@ def update_traffic():
         previous_status = state["last_status"]
 
         # ----------------------------------------------------
-        # NEW DETECTOR SESSION
-        #
-        # A new source_id means traffic_detection.py
-        # was restarted.
+        # New detector session
         # ----------------------------------------------------
 
         if stored_source != source_id:
@@ -970,7 +1022,7 @@ def update_traffic():
             )
 
         # ----------------------------------------------------
-        # Reject old/delayed requests
+        # Ignore delayed/duplicate requests
         # ----------------------------------------------------
 
         if sequence <= stored_sequence:
@@ -993,14 +1045,18 @@ def update_traffic():
                     "old_or_duplicate_request",
 
                 "traffic_status":
-                    traffic_data["traffic_status"],
+                    traffic_data[
+                        "traffic_status"
+                    ],
 
                 "vehicle_count":
-                    traffic_data["vehicle_count"]
+                    traffic_data[
+                        "vehicle_count"
+                    ]
             })
 
         # ----------------------------------------------------
-        # Determine whether status changed
+        # Check status change
         # ----------------------------------------------------
 
         status_changed = (
@@ -1008,22 +1064,19 @@ def update_traffic():
         )
 
         # ----------------------------------------------------
-        # Update global dashboard data
+        # Update current traffic
         # ----------------------------------------------------
 
-        traffic_data["vehicle_count"] = (
-            vehicle_count
-        )
+        traffic_data[
+            "vehicle_count"
+        ] = vehicle_count
 
-        traffic_data["traffic_status"] = (
-            traffic_status
-        )
+        traffic_data[
+            "traffic_status"
+        ] = traffic_status
 
         # ----------------------------------------------------
-        # Save state BEFORE sending notification.
-        #
-        # This prevents duplicate notifications if another
-        # request arrives while Firebase is sending.
+        # Save server state
         # ----------------------------------------------------
 
         cursor.execute("""
@@ -1044,10 +1097,10 @@ def update_traffic():
         conn.close()
 
         # ----------------------------------------------------
-        # STATUS DID NOT CHANGE
+        # No status change
         #
-        # Update dashboard only.
-        # DO NOT send notification.
+        # Dashboard still updates.
+        # Notification is NOT sent.
         # ----------------------------------------------------
 
         if not status_changed:
@@ -1070,8 +1123,7 @@ def update_traffic():
 
         # ----------------------------------------------------
         # STATUS CHANGED
-        #
-        # Exactly ONE notification for this transition.
+        # Send exactly one notification.
         # ----------------------------------------------------
 
         print("")
@@ -1152,6 +1204,7 @@ def update_traffic():
             "success": False,
 
             "message": str(e)
+
         }), 500
 
 
@@ -1190,9 +1243,11 @@ def health():
 
         "status": "online",
 
-        "firebase": firebase_initialized,
+        "firebase":
+            firebase_initialized,
 
-        "traffic": traffic_data,
+        "traffic":
+            traffic_data,
 
         "registered_devices":
             token_count,
@@ -1208,7 +1263,7 @@ def health():
 
 
 # ============================================================
-# RUN LOCALLY
+# RUN LOCAL SERVER
 # ============================================================
 
 if __name__ == "__main__":
